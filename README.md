@@ -5,8 +5,8 @@ Plays audio voice lines when you accept / complete quests and interact with NPC 
 
 
 Adds an **Echo** button inside quest log, playback queue status bar, settings panel and replay window. <br>
-<img src="screenshots/quest echo button.png" width="300"> <br>
-<img src="screenshots/status bar and settings.png" width="300"> <br>
+<img src="screenshots/quest echo button.png" width="600"> <br>
+<img src="screenshots/status bar and settings.png" width="600"> <br>
 
 Chat command: `/qe`
 
