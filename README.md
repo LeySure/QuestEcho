@@ -1,8 +1,13 @@
 # QuestEcho
-Voice add‑on for Emberveil WoW 1.12.1 client.
+<img src="screenshots/QuestEcho.png" width="100">
+Voice add‑on for Emberveil WoW 1.12.1 client.<br>
+Plays audio voice lines when you accept / complete quests and interact with NPC gossip. <br>
 
-Plays audio voice lines when you accept / complete quests and interact with NPC gossip.
-Adds an **Echo** button inside quest log, playback queue status bar, settings panel and replay window.
+
+Adds an **Echo** button inside quest log, playback queue status bar, settings panel and replay window. <br>
+<img src="screenshots/quest echo button.png" width="300"> <br>
+<img src="screenshots/status bar and settings.png" width="300"> <br>
+
 Chat command: `/qe`
 
 > ⚠️ This addon **requires language‑specific audio data pack**. Core addon alone has no sound.
