@@ -2,7 +2,7 @@
 ## Title: QuestEcho (Emberveil)
 ## Notes: Voice lines for quests and NPC gossip (Emberveil / Unreal Azeroth port)
 ## Author: Leysure
-## Version: 1.5.0
+## Version: 1.5.1
 ## SavedVariables: QuestEchoDB
 Core.lua
 Data\Module.lua
@@ -11,4 +11,5 @@ Data\generated\quest_id_lookups.lua
 Data\generated\questlog_npc_lookups.lua
 Data\generated\npc_name_gossip_file_lookups.lua
 Data\generated\gossip_file_lookups.lua
+Data\generated\selftest_files.lua
 Data\generated\sound_length_table.lua

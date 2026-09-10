@@ -75,6 +75,741 @@ QuestEcho.Enums =
 
 local Enums = QuestEcho.Enums
 
+--- Voice files that hang the client's ogg decoder (no static signature found:
+--- identical encoding/structure/decode in ffmpeg, libvorbis and stb_vorbis, only
+--- the in-game PlaySoundFile hangs). These are shipped as .wav in the data pack
+--- and prepared via the override below; the ogg originals are removed.
+--- Value = actual file name on disk (with extension); the lookup key is the
+--- logical file name from the length table.
+QuestEcho.WavOverride =
+{
+    ["6d671d26f71829b3cfdafaf53866d6f0"] = "6d671d26.wav",
+    ["0016d0ff7c43ada7e4f367d5b24e9b81"] = "0016d0ff7c43ada7e4f367d5b24e9b81.wav",
+    ["012cba0ea4f7f602188cc6eee3493caa"] = "012cba0ea4f7f602188cc6eee3493caa.wav",
+    ["0183522424d4cfa55625a193ad8eb384"] = "0183522424d4cfa55625a193ad8eb384.wav",
+    ["01ed61117dd6f345c1893b55ba7c3e87"] = "01ed61117dd6f345c1893b55ba7c3e87.wav",
+    ["036da6474362e31b5c5b8714997221d3"] = "036da6474362e31b5c5b8714997221d3.wav",
+    ["053c0fa7412311c64d1afb7f93c896c5"] = "053c0fa7412311c64d1afb7f93c896c5.wav",
+    ["055387f3f8f3d85f77a3586504bdb666"] = "055387f3f8f3d85f77a3586504bdb666.wav",
+    ["058360cd0cfb26d7fc00ef22bcb6d9f7"] = "058360cd0cfb26d7fc00ef22bcb6d9f7.wav",
+    ["0815aba74c3a70d73e32cc5365b4babf"] = "0815aba74c3a70d73e32cc5365b4babf.wav",
+    ["09a9c4ad934397dc02876bda84bad0ff"] = "09a9c4ad934397dc02876bda84bad0ff.wav",
+    ["0b31ddefd183ea40f98d3eae3fd516ca"] = "0b31ddefd183ea40f98d3eae3fd516ca.wav",
+    ["0c6e66b796bf9729d8e0c65c441711d3"] = "0c6e66b796bf9729d8e0c65c441711d3.wav",
+    ["0fb161fe21a8ff5f560e714f38fb0b44"] = "0fb161fe21a8ff5f560e714f38fb0b44.wav",
+    ["0ff75e91e3efa274b411fe43479cec98"] = "0ff75e91e3efa274b411fe43479cec98.wav",
+    ["10d29ce6d81dc4cf54ce10f28a538a8b"] = "10d29ce6d81dc4cf54ce10f28a538a8b.wav",
+    ["1210fdab329f2bfebdcf1f7d836de9da"] = "1210fdab329f2bfebdcf1f7d836de9da.wav",
+    ["1308cc62e8033d85625722f0011e1e98"] = "1308cc62e8033d85625722f0011e1e98.wav",
+    ["136e146f620b6e7197755a682b68ce84"] = "136e146f620b6e7197755a682b68ce84.wav",
+    ["13a767725c325fa51d467e80639b5c7b"] = "13a767725c325fa51d467e80639b5c7b.wav",
+    ["147f7781bcfc14024f4c4c8fae38a676"] = "147f7781bcfc14024f4c4c8fae38a676.wav",
+    ["17112182a94dae91af72cf8bb58dde4b"] = "17112182a94dae91af72cf8bb58dde4b.wav",
+    ["172651bdd26f58b06745eb92d746a013"] = "172651bdd26f58b06745eb92d746a013.wav",
+    ["18b7641805b9860312823c6781f21372"] = "18b7641805b9860312823c6781f21372.wav",
+    ["19094708788f5fed06d218ff02fd6667"] = "19094708788f5fed06d218ff02fd6667.wav",
+    ["19d7a62aa644748c5d13eaad7341a221"] = "19d7a62aa644748c5d13eaad7341a221.wav",
+    ["1b37830fe8480ed6bd57b3d834cd2310"] = "1b37830fe8480ed6bd57b3d834cd2310.wav",
+    ["1d00acba5fef6b2efb8c4454e9935541"] = "1d00acba5fef6b2efb8c4454e9935541.wav",
+    ["1d3cd34903e040de6b0c73c1aa2fb0df"] = "1d3cd34903e040de6b0c73c1aa2fb0df.wav",
+    ["1ea4f7d4103e7f106c8b166cdb5e3649"] = "1ea4f7d4103e7f106c8b166cdb5e3649.wav",
+    ["20e50f7907859f3c67714458b3ebf738"] = "20e50f7907859f3c67714458b3ebf738.wav",
+    ["2494fd01fbbcaa3067f0f6bde8276ef1"] = "2494fd01fbbcaa3067f0f6bde8276ef1.wav",
+    ["24f8a464cacbadb24bac1f53d8aa22dd"] = "24f8a464cacbadb24bac1f53d8aa22dd.wav",
+    ["258744fe85450f544093d5fd17856341"] = "258744fe85450f544093d5fd17856341.wav",
+    ["274e65db536d36aab805a57c6a0b4076"] = "274e65db536d36aab805a57c6a0b4076.wav",
+    ["29ab1815cf6aff3f41bd5f69c7535753"] = "29ab1815cf6aff3f41bd5f69c7535753.wav",
+    ["2a934c9aeb08dec90a0d0e7b99a9e8d0"] = "2a934c9aeb08dec90a0d0e7b99a9e8d0.wav",
+    ["2ab19e8f4975368b71069106f4f9e703"] = "2ab19e8f4975368b71069106f4f9e703.wav",
+    ["2c1d9480e123f8e1e386e141a695f2a7"] = "2c1d9480e123f8e1e386e141a695f2a7.wav",
+    ["2c6cd31df344e81e13802e0526bd4f82"] = "2c6cd31df344e81e13802e0526bd4f82.wav",
+    ["2cf644ba2f510e7a4b8706d23090659a"] = "2cf644ba2f510e7a4b8706d23090659a.wav",
+    ["2e65eb1fa48fb06278bb020f60a84d34"] = "2e65eb1fa48fb06278bb020f60a84d34.wav",
+    ["2e8e186a35fdbdc4167c9a2d1cbd23c8"] = "2e8e186a35fdbdc4167c9a2d1cbd23c8.wav",
+    ["302142138778affead2a13087925b7b1"] = "302142138778affead2a13087925b7b1.wav",
+    ["3108806b44f37624987d36cafc8de658"] = "3108806b44f37624987d36cafc8de658.wav",
+    ["311c5f6a0a1dddef0371a0c113bb62ab"] = "311c5f6a0a1dddef0371a0c113bb62ab.wav",
+    ["32a5626d8140ad954652c141442fc86c"] = "32a5626d8140ad954652c141442fc86c.wav",
+    ["334b73436ddc4b1bda745af5eb1e4f32"] = "334b73436ddc4b1bda745af5eb1e4f32.wav",
+    ["338674bfb1edb2117c563bae8305e5f2"] = "338674bfb1edb2117c563bae8305e5f2.wav",
+    ["33e9252b9e79f5d50346fb17553ee92a"] = "33e9252b9e79f5d50346fb17553ee92a.wav",
+    ["3a497353f8cb102ec4debd8d8adc446a"] = "3a497353f8cb102ec4debd8d8adc446a.wav",
+    ["3afbafbdc7a6269b97c1bd93f678955c"] = "3afbafbdc7a6269b97c1bd93f678955c.wav",
+    ["3c96e38d8275bcb879a7e7eb43dca519"] = "3c96e38d8275bcb879a7e7eb43dca519.wav",
+    ["3ccc9d3982a4f8dde9b5653bc0c2e796"] = "3ccc9d3982a4f8dde9b5653bc0c2e796.wav",
+    ["3def2f3bfaf2254698c9601afcf6a534"] = "3def2f3bfaf2254698c9601afcf6a534.wav",
+    ["3f6b8f110896d04e7a6ad663cef0e70d"] = "3f6b8f110896d04e7a6ad663cef0e70d.wav",
+    ["3fd9a5ca3019eefa0d287e45aeacd7da"] = "3fd9a5ca3019eefa0d287e45aeacd7da.wav",
+    ["42589616848b8292a7b00119aa63bd29"] = "42589616848b8292a7b00119aa63bd29.wav",
+    ["42747362bb8e6d2164d7e79747248058"] = "42747362bb8e6d2164d7e79747248058.wav",
+    ["44b04e19a4aa4b719b00c378a9acd900"] = "44b04e19a4aa4b719b00c378a9acd900.wav",
+    ["46bd22a73f998050e4834380890f65e5"] = "46bd22a73f998050e4834380890f65e5.wav",
+    ["4c1b626c145d8077c5aa2db55852dcfa"] = "4c1b626c145d8077c5aa2db55852dcfa.wav",
+    ["4cf39f0b48e67e4fb4e5d3538ae49f07"] = "4cf39f0b48e67e4fb4e5d3538ae49f07.wav",
+    ["4fb69760c9da7ebb077cf4bab2e8b3c9"] = "4fb69760c9da7ebb077cf4bab2e8b3c9.wav",
+    ["5011b7376cf9fbdf9a91842132fba2e6"] = "5011b7376cf9fbdf9a91842132fba2e6.wav",
+    ["50d79c7aeabf3cffea9b701bf10738f2"] = "50d79c7aeabf3cffea9b701bf10738f2.wav",
+    ["5521f2e5d2e37d7012ea87b75badcb01"] = "5521f2e5d2e37d7012ea87b75badcb01.wav",
+    ["554b8726d09d342022c5c7eaf5a9818e"] = "554b8726d09d342022c5c7eaf5a9818e.wav",
+    ["565e6a177495db01dd95ca40d2cdce06"] = "565e6a177495db01dd95ca40d2cdce06.wav",
+    ["5776ad2ab96a8574ffb8006cc2353824"] = "5776ad2ab96a8574ffb8006cc2353824.wav",
+    ["577b34a2009f6599e2e71e1f5ebe9a56"] = "577b34a2009f6599e2e71e1f5ebe9a56.wav",
+    ["580054d04eb523be430e4750bc42907f"] = "580054d04eb523be430e4750bc42907f.wav",
+    ["59639744f57566c294774d64cbef1436"] = "59639744f57566c294774d64cbef1436.wav",
+    ["5a6a13f324242e75a6382d99c516cc94"] = "5a6a13f324242e75a6382d99c516cc94.wav",
+    ["5aaf2f083eef745315ab1a2dc692fcb0"] = "5aaf2f083eef745315ab1a2dc692fcb0.wav",
+    ["5b3a63364d822c6bd2559d96ec4d9317"] = "5b3a63364d822c6bd2559d96ec4d9317.wav",
+    ["5b5b66a181411dac0931427a9ff18c6c"] = "5b5b66a181411dac0931427a9ff18c6c.wav",
+    ["5bb22872b7638f5085ca2059018cc5ff"] = "5bb22872b7638f5085ca2059018cc5ff.wav",
+    ["5e0b696d989d9f556038cd140846f661"] = "5e0b696d989d9f556038cd140846f661.wav",
+    ["5e32b11a014d38435309852c50df4593"] = "5e32b11a014d38435309852c50df4593.wav",
+    ["5f903d5d4508abe7b82460c9b5fcf80e"] = "5f903d5d4508abe7b82460c9b5fcf80e.wav",
+    ["60e14cbaa8435b4075f83aeb3e80dcff"] = "60e14cbaa8435b4075f83aeb3e80dcff.wav",
+    ["6169b63082c1481ee1b292a6bd277450"] = "6169b63082c1481ee1b292a6bd277450.wav",
+    ["63954ad79a181f4bdebcb1e87ea78d14"] = "63954ad79a181f4bdebcb1e87ea78d14.wav",
+    ["63da9bd89a3205deec3a0d71f3209f77"] = "63da9bd89a3205deec3a0d71f3209f77.wav",
+    ["6427b5ad172185229fdf52a2a91052ea"] = "6427b5ad172185229fdf52a2a91052ea.wav",
+    ["65ed32ee792501359c944e9da3ef350e"] = "65ed32ee792501359c944e9da3ef350e.wav",
+    ["6628421bf475ed47d8d51a305f80ce4b"] = "6628421bf475ed47d8d51a305f80ce4b.wav",
+    ["695bffa496e17bf3ace18949095a965e"] = "695bffa496e17bf3ace18949095a965e.wav",
+    ["6a4b81d7d70a940c7734d52c5bd021ed"] = "6a4b81d7d70a940c7734d52c5bd021ed.wav",
+    ["6adb3f498e428354df52f9e4254cab21"] = "6adb3f498e428354df52f9e4254cab21.wav",
+    ["6b44a3e2d494f59d83f14e5c3fd90e85"] = "6b44a3e2d494f59d83f14e5c3fd90e85.wav",
+    ["6ca0e5f286f5115ccba86010cc9d19a7"] = "6ca0e5f286f5115ccba86010cc9d19a7.wav",
+    ["6d05441079c12f5737a4ae0732070946"] = "6d05441079c12f5737a4ae0732070946.wav",
+    ["6d0616990747b3cf281cc9641375724d"] = "6d0616990747b3cf281cc9641375724d.wav",
+    ["6e24adae0babfe7f1e128960d09c55af"] = "6e24adae0babfe7f1e128960d09c55af.wav",
+    ["6f240a341cad715c1ce2f4322f7f0c15"] = "6f240a341cad715c1ce2f4322f7f0c15.wav",
+    ["6f3dc341f1c868637188480b03d81828"] = "6f3dc341f1c868637188480b03d81828.wav",
+    ["70cedd46427b60803ef6cb69ad0be4cb"] = "70cedd46427b60803ef6cb69ad0be4cb.wav",
+    ["712130efaf95afb9ccb5f2a5c069c0fc"] = "712130efaf95afb9ccb5f2a5c069c0fc.wav",
+    ["71b3c8878ca9d907574fab21af50df1a"] = "71b3c8878ca9d907574fab21af50df1a.wav",
+    ["72d9e590ddf6bf219b208c8b157ddb5c"] = "72d9e590ddf6bf219b208c8b157ddb5c.wav",
+    ["788e53903ca8bd09c088bd1d27efa397"] = "788e53903ca8bd09c088bd1d27efa397.wav",
+    ["7eddf733901dbca29a5a21752dd1ceb4"] = "7eddf733901dbca29a5a21752dd1ceb4.wav",
+    ["7f40e2c7a99505ba4995ee282dfc6836"] = "7f40e2c7a99505ba4995ee282dfc6836.wav",
+    ["807f545aa510396b39fd74ed72c9abcb"] = "807f545aa510396b39fd74ed72c9abcb.wav",
+    ["818428d85cc2451411dffed3878e6204"] = "818428d85cc2451411dffed3878e6204.wav",
+    ["832d7cd84aaed062179a1a03bf687405"] = "832d7cd84aaed062179a1a03bf687405.wav",
+    ["8515a7c8dc5b8746fab062eb6c4b7545"] = "8515a7c8dc5b8746fab062eb6c4b7545.wav",
+    ["8651024fca6f7bd42a0336d52e7d69fc"] = "8651024fca6f7bd42a0336d52e7d69fc.wav",
+    ["87e8317d1f6872386f47da8545ea8768"] = "87e8317d1f6872386f47da8545ea8768.wav",
+    ["8bcc27057464ad8295116b381b58f4c4"] = "8bcc27057464ad8295116b381b58f4c4.wav",
+    ["8bf5bc359aff1ea9c01dd2c255fe0603"] = "8bf5bc359aff1ea9c01dd2c255fe0603.wav",
+    ["8d1a9653ec0ac81cbb827f31a1138bda"] = "8d1a9653ec0ac81cbb827f31a1138bda.wav",
+    ["8d77629139cb2841d86e8e3ea861bc05"] = "8d77629139cb2841d86e8e3ea861bc05.wav",
+    ["8dd5ae8dd52efbfbadf578cc9ba63982"] = "8dd5ae8dd52efbfbadf578cc9ba63982.wav",
+    ["908c0040569523d5a3f6346f2a16f4ba"] = "908c0040569523d5a3f6346f2a16f4ba.wav",
+    ["9160ee289a277af5bf427091078afc51"] = "9160ee289a277af5bf427091078afc51.wav",
+    ["925eb79c2a5840bebb65045e96e8b3a9"] = "925eb79c2a5840bebb65045e96e8b3a9.wav",
+    ["930e45368ed7dcac8e799df8fa5bc730"] = "930e45368ed7dcac8e799df8fa5bc730.wav",
+    ["93b9b434b02f7bb9a2588ae09d531eae"] = "93b9b434b02f7bb9a2588ae09d531eae.wav",
+    ["93cc04c8b8e24496ad60223e82204b3c"] = "93cc04c8b8e24496ad60223e82204b3c.wav",
+    ["94e2524c35344ffbb05e9b1869c245f6"] = "94e2524c35344ffbb05e9b1869c245f6.wav",
+    ["96d48bb506899c3338f1cadfcbe2c66a"] = "96d48bb506899c3338f1cadfcbe2c66a.wav",
+    ["972de67fb04e5abac98c6158c6b5bcc6"] = "972de67fb04e5abac98c6158c6b5bcc6.wav",
+    ["9802c328fee5a83bc01704102bf807c7"] = "9802c328fee5a83bc01704102bf807c7.wav",
+    ["9894fe017afd5c82d452ec8f283f45f3"] = "9894fe017afd5c82d452ec8f283f45f3.wav",
+    ["99f6365eca208317d557bba2b924e015"] = "99f6365eca208317d557bba2b924e015.wav",
+    ["9b934f8faed0473a27a58466b2ffe393"] = "9b934f8faed0473a27a58466b2ffe393.wav",
+    ["9e23396b9ad89ebcda67974afc38ea06"] = "9e23396b9ad89ebcda67974afc38ea06.wav",
+    ["a18afdc5e96e5c4132424bf6058f6568"] = "a18afdc5e96e5c4132424bf6058f6568.wav",
+    ["a25fe9ad1bdfb172b3a2dd3d0ef51db1"] = "a25fe9ad1bdfb172b3a2dd3d0ef51db1.wav",
+    ["a28ef0400b8b68493cc0c0bec5e96f56"] = "a28ef0400b8b68493cc0c0bec5e96f56.wav",
+    ["a5bb9bf7601a2bba6b4270f85bdd04f4"] = "a5bb9bf7601a2bba6b4270f85bdd04f4.wav",
+    ["a7ed0b69c3f96a8b2db61ded1d58a42b"] = "a7ed0b69c3f96a8b2db61ded1d58a42b.wav",
+    ["a82acbf9cc59e1d9b14eec0cc0cef377"] = "a82acbf9cc59e1d9b14eec0cc0cef377.wav",
+    ["a98ca602e3662a391ca9f0807a798926"] = "a98ca602e3662a391ca9f0807a798926.wav",
+    ["ab4fb84e95b89dcfe001b8f105e6210b"] = "ab4fb84e95b89dcfe001b8f105e6210b.wav",
+    ["ac0ba2a4466278a2ed6ceac133133a36"] = "ac0ba2a4466278a2ed6ceac133133a36.wav",
+    ["b1a4bc076a7a69d393730100ba28a6d7"] = "b1a4bc076a7a69d393730100ba28a6d7.wav",
+    ["b27d8d76ceedb566e8ec960533bf3a52"] = "b27d8d76ceedb566e8ec960533bf3a52.wav",
+    ["b34aad75e8e14753d5e47ece1a2eba61"] = "b34aad75e8e14753d5e47ece1a2eba61.wav",
+    ["b4db7422b050ec4c88d959b16d7d2d02"] = "b4db7422b050ec4c88d959b16d7d2d02.wav",
+    ["b4e38865182ec7942e86379c3c9fcdf9"] = "b4e38865182ec7942e86379c3c9fcdf9.wav",
+    ["b660919fd15bb4acba5ab26eedc550ac"] = "b660919fd15bb4acba5ab26eedc550ac.wav",
+    ["ba5ad36a7112e765204a7bd3ede7c783"] = "ba5ad36a7112e765204a7bd3ede7c783.wav",
+    ["bb1f573853925f0a6e40c79130754165"] = "bb1f573853925f0a6e40c79130754165.wav",
+    ["bb2e2ac84fdaea93b4cb5f24ace4d539"] = "bb2e2ac84fdaea93b4cb5f24ace4d539.wav",
+    ["bb63ff9d75c7726f1d06e21fe2021b8b"] = "bb63ff9d75c7726f1d06e21fe2021b8b.wav",
+    ["bb867ac15a6374047fe55ff21e0b3596"] = "bb867ac15a6374047fe55ff21e0b3596.wav",
+    ["bc68f87f28d14f99d8f8ff4c267ffea2"] = "bc68f87f28d14f99d8f8ff4c267ffea2.wav",
+    ["bce8743c8a0bd63dc3920724e764d1fa"] = "bce8743c8a0bd63dc3920724e764d1fa.wav",
+    ["bd7be540acfdb0455e58364636e73dda"] = "bd7be540acfdb0455e58364636e73dda.wav",
+    ["bdfe4126b453f140f54062473872a072"] = "bdfe4126b453f140f54062473872a072.wav",
+    ["be509dfb481fe127dfd82ad17e93b19e"] = "be509dfb481fe127dfd82ad17e93b19e.wav",
+    ["bf6b174b1213cc9fc8478d3b5f2b4971"] = "bf6b174b1213cc9fc8478d3b5f2b4971.wav",
+    ["c3684d8296958c5935a2740fa7611b74"] = "c3684d8296958c5935a2740fa7611b74.wav",
+    ["c507517029d417a2e6d13173fcac6bfe"] = "c507517029d417a2e6d13173fcac6bfe.wav",
+    ["c7d0d5f0497c7bbd94f17ecb262de67c"] = "c7d0d5f0497c7bbd94f17ecb262de67c.wav",
+    ["c7e8ad876846de0a672a9b4dd6150d20"] = "c7e8ad876846de0a672a9b4dd6150d20.wav",
+    ["c8b7cc29723f78c9a33d40dd94b43a31"] = "c8b7cc29723f78c9a33d40dd94b43a31.wav",
+    ["ca5ae8d63433bb1a991ae3a7d4a633fc"] = "ca5ae8d63433bb1a991ae3a7d4a633fc.wav",
+    ["ca7d18cf048257b8138d41171774e437"] = "ca7d18cf048257b8138d41171774e437.wav",
+    ["ce85977b0f1b155023ca49641a927acd"] = "ce85977b0f1b155023ca49641a927acd.wav",
+    ["cf38911600ac02c04cb72aafa6596e66"] = "cf38911600ac02c04cb72aafa6596e66.wav",
+    ["d02d422dcd7131e686d6532177696d9a"] = "d02d422dcd7131e686d6532177696d9a.wav",
+    ["d0ef52056e69de8890c17a16c8e0a5ac"] = "d0ef52056e69de8890c17a16c8e0a5ac.wav",
+    ["d34171a9fbd911b8f1bf818f71cc3f32"] = "d34171a9fbd911b8f1bf818f71cc3f32.wav",
+    ["d3820c153c571b0cfaad41a0a05ec90b"] = "d3820c153c571b0cfaad41a0a05ec90b.wav",
+    ["d607877befae4fc8560330345158b290"] = "d607877befae4fc8560330345158b290.wav",
+    ["d8e60ce5ca29731c4ca9356a1d489a59"] = "d8e60ce5ca29731c4ca9356a1d489a59.wav",
+    ["db0fd82a2e87168de7f37ba74147a476"] = "db0fd82a2e87168de7f37ba74147a476.wav",
+    ["db570f1f51f6fd3b1a42e5953bafd049"] = "db570f1f51f6fd3b1a42e5953bafd049.wav",
+    ["dcf21ea6bba24a55d9157c1f031d42ef"] = "dcf21ea6bba24a55d9157c1f031d42ef.wav",
+    ["de96efe8437890d30d0aff9e01f5f7cb"] = "de96efe8437890d30d0aff9e01f5f7cb.wav",
+    ["e0280ea403de38a99d9f00704dc83cf8"] = "e0280ea403de38a99d9f00704dc83cf8.wav",
+    ["e2581a659044cdbda9365b2fd7a22202"] = "e2581a659044cdbda9365b2fd7a22202.wav",
+    ["e3a348a35882a9d1e3d9c86ff56b6bbe"] = "e3a348a35882a9d1e3d9c86ff56b6bbe.wav",
+    ["e3a9bceac350c8d4521ba30052baa2de"] = "e3a9bceac350c8d4521ba30052baa2de.wav",
+    ["e6aaf0a5e40d69ade99a9420f809af6e"] = "e6aaf0a5e40d69ade99a9420f809af6e.wav",
+    ["e762061ba8bf75781dc6a8a400d88e13"] = "e762061ba8bf75781dc6a8a400d88e13.wav",
+    ["e7b869503b0c9fc3c78fef1e53facf50"] = "e7b869503b0c9fc3c78fef1e53facf50.wav",
+    ["ee11d419f725f323959cf1466840e61b"] = "ee11d419f725f323959cf1466840e61b.wav",
+    ["ee80e28a58b1049bafc0e9b980b7a239"] = "ee80e28a58b1049bafc0e9b980b7a239.wav",
+    ["ef38b09c14f46b5a8dcf5d782c630fd6"] = "ef38b09c14f46b5a8dcf5d782c630fd6.wav",
+    ["efa6e9ddc589d11d0aeee639e21deb43"] = "efa6e9ddc589d11d0aeee639e21deb43.wav",
+    ["f-1ad4fc3d07a7873ab9512c5aa3f5ce4f"] = "f-1ad4fc3d07a7873ab9512c5aa3f5ce4f.wav",
+    ["f-386f37176e6f7b06d34487928a573d23"] = "f-386f37176e6f7b06d34487928a573d23.wav",
+    ["f-4ef02a6cde5565b37e151274512c0641"] = "f-4ef02a6cde5565b37e151274512c0641.wav",
+    ["f-6a6954aa23ff423b51b954fe09b144a8"] = "f-6a6954aa23ff423b51b954fe09b144a8.wav",
+    ["f-6d836253374e7258f1d26abac7475d18"] = "f-6d836253374e7258f1d26abac7475d18.wav",
+    ["f-ac0a0b581e16d91b9d2a09b564f6d6c3"] = "f-ac0a0b581e16d91b9d2a09b564f6d6c3.wav",
+    ["f-c25da7aea73e13a714910fc2805f839f"] = "f-c25da7aea73e13a714910fc2805f839f.wav",
+    ["f05de425d7bd02752037b8477cf01b53"] = "f05de425d7bd02752037b8477cf01b53.wav",
+    ["f0c3fcd8e5d2ce42560cdd3636e4af9e"] = "f0c3fcd8e5d2ce42560cdd3636e4af9e.wav",
+    ["f1bba8b8fe977e9469a2a2d8535cd5bc"] = "f1bba8b8fe977e9469a2a2d8535cd5bc.wav",
+    ["f252a63ef02f49f36892505401561fee"] = "f252a63ef02f49f36892505401561fee.wav",
+    ["f479d49557864313202d2081a17b0dc5"] = "f479d49557864313202d2081a17b0dc5.wav",
+    ["f4d8e423146d1060237e65e944828604"] = "f4d8e423146d1060237e65e944828604.wav",
+    ["f54d2505d254f8e348f3bd182ed879e7"] = "f54d2505d254f8e348f3bd182ed879e7.wav",
+    ["f62abc611ce83aa205cd0e2b5918cc10"] = "f62abc611ce83aa205cd0e2b5918cc10.wav",
+    ["f6c0c1ea475d9aa33d7c2f43bb8f2ba6"] = "f6c0c1ea475d9aa33d7c2f43bb8f2ba6.wav",
+    ["f721840f336ebbf959238b5f76ad37ab"] = "f721840f336ebbf959238b5f76ad37ab.wav",
+    ["f9ef4e04eea4de713fc61313fd8a4c8e"] = "f9ef4e04eea4de713fc61313fd8a4c8e.wav",
+    ["fa856e726cbf60331453148913410f70"] = "fa856e726cbf60331453148913410f70.wav",
+    ["fb677ed28551b5faa6955044aacc539b"] = "fb677ed28551b5faa6955044aacc539b.wav",
+    ["fc64c85b44749257ced7e34a940a1c64"] = "fc64c85b44749257ced7e34a940a1c64.wav",
+    ["fcb888f0ece4f405f7b532de65cab6d0"] = "fcb888f0ece4f405f7b532de65cab6d0.wav",
+    ["fd10ddbf850f23ec3e5ca81dbb183556"] = "fd10ddbf850f23ec3e5ca81dbb183556.wav",
+    ["fd6c52e798e64559f12964acfc65a412"] = "fd6c52e798e64559f12964acfc65a412.wav",
+    ["fdaab9e2b8a9ef75ee889a83109b9758"] = "fdaab9e2b8a9ef75ee889a83109b9758.wav",
+    ["ffcf7d3fc05ebc9a1303d2c59a697fcc"] = "ffcf7d3fc05ebc9a1303d2c59a697fcc.wav",
+    ["m-501c83ee292da27782fae1e60bf7c3f3"] = "m-501c83ee292da27782fae1e60bf7c3f3.wav",
+    ["m-5906a29765d2173d53b9ab776005d62b"] = "m-5906a29765d2173d53b9ab776005d62b.wav",
+    ["m-719242cbbf2aa59d701d86713c8c3252"] = "m-719242cbbf2aa59d701d86713c8c3252.wav",
+    ["m-8b3c666dc6e4c0c98f9d6747a2aea0f8"] = "m-8b3c666dc6e4c0c98f9d6747a2aea0f8.wav",
+    ["m-8b65201c7f8e4fca254e87dde37a2d5b"] = "m-8b65201c7f8e4fca254e87dde37a2d5b.wav",
+    ["m-f3c8a5a8b088f61349bd467d2e1e02b1"] = "m-f3c8a5a8b088f61349bd467d2e1e02b1.wav",
+    -- quests
+    ["1008-complete"] = "1008-complete.wav",
+    ["1019-complete"] = "1019-complete.wav",
+    ["1022-complete"] = "1022-complete.wav",
+    ["1023-accept"] = "1023-accept.wav",
+    ["1038-accept"] = "1038-accept.wav",
+    ["1069-complete"] = "1069-complete.wav",
+    ["1076-complete"] = "1076-complete.wav",
+    ["1078-accept"] = "1078-accept.wav",
+    ["1107-complete"] = "1107-complete.wav",
+    ["1115-complete"] = "1115-complete.wav",
+    ["1121-accept"] = "1121-accept.wav",
+    ["11219-accept"] = "11219-accept.wav",
+    ["1136-accept"] = "1136-accept.wav",
+    ["1140-accept"] = "1140-accept.wav",
+    ["1151-complete"] = "1151-complete.wav",
+    ["116-complete"] = "116-complete.wav",
+    ["1164-complete"] = "1164-complete.wav",
+    ["1167-accept"] = "1167-accept.wav",
+    ["1176-complete"] = "1176-complete.wav",
+    ["1180-accept"] = "1180-accept.wav",
+    ["119-accept"] = "119-accept.wav",
+    ["1192-complete"] = "1192-complete.wav",
+    ["1248-accept"] = "1248-accept.wav",
+    ["1249-accept"] = "1249-accept.wav",
+    ["1250-complete"] = "1250-complete.wav",
+    ["1258-complete"] = "1258-complete.wav",
+    ["126-complete"] = "126-complete.wav",
+    ["1260-accept"] = "1260-accept.wav",
+    ["1266-complete"] = "1266-complete.wav",
+    ["1275-complete"] = "1275-complete.wav",
+    ["128-accept"] = "128-accept.wav",
+    ["1287-complete"] = "1287-complete.wav",
+    ["1324-complete"] = "1324-complete.wav",
+    ["133-accept"] = "133-accept.wav",
+    ["1382-accept"] = "1382-accept.wav",
+    ["1387-complete"] = "1387-complete.wav",
+    ["1439-accept"] = "1439-accept.wav",
+    ["144-accept"] = "144-accept.wav",
+    ["1454-accept"] = "1454-accept.wav",
+    ["1468-accept"] = "1468-accept.wav",
+    ["1515-accept"] = "1515-accept.wav",
+    ["1518-complete"] = "1518-complete.wav",
+    ["1525-accept"] = "1525-accept.wav",
+    ["1534-accept"] = "1534-accept.wav",
+    ["1535-complete"] = "1535-complete.wav",
+    ["1599-accept"] = "1599-accept.wav",
+    ["166-accept"] = "166-accept.wav",
+    ["1667-complete"] = "1667-complete.wav",
+    ["168-accept"] = "168-accept.wav",
+    ["1681-accept"] = "1681-accept.wav",
+    ["1681-complete"] = "1681-complete.wav",
+    ["1683-accept"] = "1683-accept.wav",
+    ["1691-complete"] = "1691-complete.wav",
+    ["1719-accept"] = "1719-accept.wav",
+    ["172-accept"] = "172-accept.wav",
+    ["176-complete"] = "176-complete.wav",
+    ["1781-accept"] = "1781-accept.wav",
+    ["180-complete"] = "180-complete.wav",
+    ["1806-accept"] = "1806-accept.wav",
+    ["181-accept"] = "181-accept.wav",
+    ["1841-accept"] = "1841-accept.wav",
+    ["1882-accept"] = "1882-accept.wav",
+    ["1883-complete"] = "1883-complete.wav",
+    ["190-accept"] = "190-accept.wav",
+    ["197-accept"] = "197-accept.wav",
+    ["20-complete"] = "20-complete.wav",
+    ["2041-accept"] = "2041-accept.wav",
+    ["2078-accept"] = "2078-accept.wav",
+    ["2078-complete"] = "2078-complete.wav",
+    ["210-complete"] = "210-complete.wav",
+    ["2158-complete"] = "2158-complete.wav",
+    ["22-accept"] = "22-accept.wav",
+    ["2200-accept"] = "2200-accept.wav",
+    ["2201-accept"] = "2201-accept.wav",
+    ["2201-complete"] = "2201-complete.wav",
+    ["2206-accept"] = "2206-accept.wav",
+    ["222-accept"] = "222-accept.wav",
+    ["2259-accept"] = "2259-accept.wav",
+    ["2279-complete"] = "2279-complete.wav",
+    ["2300-accept"] = "2300-accept.wav",
+    ["2300-complete"] = "2300-complete.wav",
+    ["231-accept"] = "231-accept.wav",
+    ["2318-accept"] = "2318-accept.wav",
+    ["2342-accept"] = "2342-accept.wav",
+    ["2359-complete"] = "2359-complete.wav",
+    ["236-accept"] = "236-accept.wav",
+    ["2361-complete"] = "2361-complete.wav",
+    ["2438-complete"] = "2438-complete.wav",
+    ["2460-complete"] = "2460-complete.wav",
+    ["2479-complete"] = "2479-complete.wav",
+    ["2480-complete"] = "2480-complete.wav",
+    ["2605-complete"] = "2605-complete.wav",
+    ["261-accept"] = "261-accept.wav",
+    ["2745-complete"] = "2745-complete.wav",
+    ["2746-complete"] = "2746-complete.wav",
+    ["2750-complete"] = "2750-complete.wav",
+    ["2755-complete"] = "2755-complete.wav",
+    ["2845-accept"] = "2845-accept.wav",
+    ["2848-complete"] = "2848-complete.wav",
+    ["2856-accept"] = "2856-accept.wav",
+    ["288-complete"] = "288-complete.wav",
+    ["2922-accept"] = "2922-accept.wav",
+    ["2963-accept"] = "2963-accept.wav",
+    ["297-complete"] = "297-complete.wav",
+    ["2970-accept"] = "2970-accept.wav",
+    ["2974-accept"] = "2974-accept.wav",
+    ["3083-complete"] = "3083-complete.wav",
+    ["3091-accept"] = "3091-accept.wav",
+    ["3094-accept"] = "3094-accept.wav",
+    ["3099-accept"] = "3099-accept.wav",
+    ["3100-complete"] = "3100-complete.wav",
+    ["3103-accept"] = "3103-accept.wav",
+    ["3120-accept"] = "3120-accept.wav",
+    ["3121-complete"] = "3121-complete.wav",
+    ["3130-accept"] = "3130-accept.wav",
+    ["3182-complete"] = "3182-complete.wav",
+    ["320-accept"] = "320-accept.wav",
+    ["322-complete"] = "322-complete.wav",
+    ["3370-accept"] = "3370-accept.wav",
+    ["34-accept"] = "34-accept.wav",
+    ["3454-accept"] = "3454-accept.wav",
+    ["3461-complete"] = "3461-complete.wav",
+    ["348-complete"] = "348-complete.wav",
+    ["3506-complete"] = "3506-complete.wav",
+    ["3517-complete"] = "3517-complete.wav",
+    ["353-complete"] = "353-complete.wav",
+    ["3562-accept"] = "3562-accept.wav",
+    ["357-complete"] = "357-complete.wav",
+    ["3629-complete"] = "3629-complete.wav",
+    ["3763-complete"] = "3763-complete.wav",
+    ["3765-accept"] = "3765-accept.wav",
+    ["381-complete"] = "381-complete.wav",
+    ["3823-complete"] = "3823-complete.wav",
+    ["383-accept"] = "383-accept.wav",
+    ["3845-complete"] = "3845-complete.wav",
+    ["3881-accept"] = "3881-accept.wav",
+    ["3881-complete"] = "3881-complete.wav",
+    ["389-accept"] = "389-accept.wav",
+    ["3912-complete"] = "3912-complete.wav",
+    ["3921-complete"] = "3921-complete.wav",
+    ["398-complete"] = "398-complete.wav",
+    ["4002-complete"] = "4002-complete.wav",
+    ["4041-complete"] = "4041-complete.wav",
+    ["4061-accept"] = "4061-accept.wav",
+    ["4132-complete"] = "4132-complete.wav",
+    ["4144-complete"] = "4144-complete.wav",
+    ["416-complete"] = "416-complete.wav",
+    ["417-complete"] = "417-complete.wav",
+    ["4185-complete"] = "4185-complete.wav",
+    ["4186-complete"] = "4186-complete.wav",
+    ["420-accept"] = "420-accept.wav",
+    ["420-complete"] = "420-complete.wav",
+    ["4223-accept"] = "4223-accept.wav",
+    ["426-complete"] = "426-complete.wav",
+    ["4261-complete"] = "4261-complete.wav",
+    ["4266-accept"] = "4266-accept.wav",
+    ["4285-accept"] = "4285-accept.wav",
+    ["4289-accept"] = "4289-accept.wav",
+    ["4322-accept"] = "4322-accept.wav",
+    ["438-accept"] = "438-accept.wav",
+    ["4402-complete"] = "4402-complete.wav",
+    ["443-complete"] = "443-complete.wav",
+    ["4503-accept"] = "4503-accept.wav",
+    ["4505-complete"] = "4505-complete.wav",
+    ["454-complete"] = "454-complete.wav",
+    ["456-accept"] = "456-accept.wav",
+    ["456-complete"] = "456-complete.wav",
+    ["464-complete"] = "464-complete.wav",
+    ["468-accept"] = "468-accept.wav",
+    ["472-complete"] = "472-complete.wav",
+    ["4722-complete"] = "4722-complete.wav",
+    ["4738-complete"] = "4738-complete.wav",
+    ["4782-complete"] = "4782-complete.wav",
+    ["4786-accept"] = "4786-accept.wav",
+    ["480-complete"] = "480-complete.wav",
+    ["4842-accept"] = "4842-accept.wav",
+    ["486-complete"] = "486-complete.wav",
+    ["4865-complete"] = "4865-complete.wav",
+    ["487-complete"] = "487-complete.wav",
+    ["4967-accept"] = "4967-accept.wav",
+    ["4971-accept"] = "4971-accept.wav",
+    ["4976-accept"] = "4976-accept.wav",
+    ["4981-complete"] = "4981-complete.wav",
+    ["4983-accept"] = "4983-accept.wav",
+    ["4987-complete"] = "4987-complete.wav",
+    ["5048-complete"] = "5048-complete.wav",
+    ["5055-accept"] = "5055-accept.wav",
+    ["5055-complete"] = "5055-complete.wav",
+    ["5061-accept"] = "5061-accept.wav",
+    ["5061-complete"] = "5061-complete.wav",
+    ["5084-accept"] = "5084-accept.wav",
+    ["5092-complete"] = "5092-complete.wav",
+    ["5097-complete"] = "5097-complete.wav",
+    ["51-accept"] = "51-accept.wav",
+    ["5102-complete"] = "5102-complete.wav",
+    ["512-complete"] = "512-complete.wav",
+    ["513-complete"] = "513-complete.wav",
+    ["5141-accept"] = "5141-accept.wav",
+    ["5141-complete"] = "5141-complete.wav",
+    ["52-complete"] = "52-complete.wav",
+    ["5203-accept"] = "5203-accept.wav",
+    ["5210-complete"] = "5210-complete.wav",
+    ["5214-complete"] = "5214-complete.wav",
+    ["5229-accept"] = "5229-accept.wav",
+    ["5231-accept"] = "5231-accept.wav",
+    ["525-accept"] = "525-accept.wav",
+    ["525-complete"] = "525-complete.wav",
+    ["5263-complete"] = "5263-complete.wav",
+    ["5264-complete"] = "5264-complete.wav",
+    ["53-accept"] = "53-accept.wav",
+    ["5302-complete"] = "5302-complete.wav",
+    ["5305-accept"] = "5305-accept.wav",
+    ["5384-accept"] = "5384-accept.wav",
+    ["5385-accept"] = "5385-accept.wav",
+    ["541-accept"] = "541-accept.wav",
+    ["542-accept"] = "542-accept.wav",
+    ["5466-accept"] = "5466-accept.wav",
+    ["5526-accept"] = "5526-accept.wav",
+    ["5536-accept"] = "5536-accept.wav",
+    ["554-complete"] = "554-complete.wav",
+    ["56-accept"] = "56-accept.wav",
+    ["56-complete"] = "56-complete.wav",
+    ["560-accept"] = "560-accept.wav",
+    ["5641-complete"] = "5641-complete.wav",
+    ["5646-accept"] = "5646-accept.wav",
+    ["565-complete"] = "565-complete.wav",
+    ["5654-complete"] = "5654-complete.wav",
+    ["5656-complete"] = "5656-complete.wav",
+    ["5663-accept"] = "5663-accept.wav",
+    ["57-complete"] = "57-complete.wav",
+    ["571-complete"] = "571-complete.wav",
+    ["572-complete"] = "572-complete.wav",
+    ["5781-accept"] = "5781-accept.wav",
+    ["58-complete"] = "58-complete.wav",
+    ["580-accept"] = "580-accept.wav",
+    ["580-complete"] = "580-complete.wav",
+    ["5845-complete"] = "5845-complete.wav",
+    ["59-accept"] = "59-accept.wav",
+    ["5902-accept"] = "5902-accept.wav",
+    ["5903-accept"] = "5903-accept.wav",
+    ["5921-accept"] = "5921-accept.wav",
+    ["5929-accept"] = "5929-accept.wav",
+    ["5932-accept"] = "5932-accept.wav",
+    ["599-accept"] = "599-accept.wav",
+    ["60-complete"] = "60-complete.wav",
+    ["6004-accept"] = "6004-accept.wav",
+    ["602-complete"] = "602-complete.wav",
+    ["6025-accept"] = "6025-accept.wav",
+    ["6042-complete"] = "6042-complete.wav",
+    ["6070-accept"] = "6070-accept.wav",
+    ["6083-accept"] = "6083-accept.wav",
+    ["6101-complete"] = "6101-complete.wav",
+    ["6122-accept"] = "6122-accept.wav",
+    ["6128-accept"] = "6128-accept.wav",
+    ["6129-accept"] = "6129-accept.wav",
+    ["6129-complete"] = "6129-complete.wav",
+    ["6141-accept"] = "6141-accept.wav",
+    ["6147-complete"] = "6147-complete.wav",
+    ["6185-complete"] = "6185-complete.wav",
+    ["62-complete"] = "62-complete.wav",
+    ["621-complete"] = "621-complete.wav",
+    ["628-accept"] = "628-accept.wav",
+    ["6283-complete"] = "6283-complete.wav",
+    ["633-accept"] = "633-accept.wav",
+    ["6361-accept"] = "6361-accept.wav",
+    ["6364-complete"] = "6364-complete.wav",
+    ["6382-accept"] = "6382-accept.wav",
+    ["6384-complete"] = "6384-complete.wav",
+    ["6388-complete"] = "6388-complete.wav",
+    ["64-accept"] = "64-accept.wav",
+    ["6402-accept"] = "6402-accept.wav",
+    ["6548-accept"] = "6548-accept.wav",
+    ["6568-complete"] = "6568-complete.wav",
+    ["657-accept"] = "657-accept.wav",
+    ["659-complete"] = "659-complete.wav",
+    ["6605-complete"] = "6605-complete.wav",
+    ["661-complete"] = "661-complete.wav",
+    ["662-accept"] = "662-accept.wav",
+    ["6627-complete"] = "6627-complete.wav",
+    ["6643-complete"] = "6643-complete.wav",
+    ["678-complete"] = "678-complete.wav",
+    ["68-complete"] = "68-complete.wav",
+    ["681-accept"] = "681-accept.wav",
+    ["6826-complete"] = "6826-complete.wav",
+    ["6827-complete"] = "6827-complete.wav",
+    ["6984-complete"] = "6984-complete.wav",
+    ["7022-accept"] = "7022-accept.wav",
+    ["7023-accept"] = "7023-accept.wav",
+    ["7170-complete"] = "7170-complete.wav",
+    ["7281-complete"] = "7281-complete.wav",
+    ["729-accept"] = "729-accept.wav",
+    ["729-complete"] = "729-complete.wav",
+    ["731-complete"] = "731-complete.wav",
+    ["733-accept"] = "733-accept.wav",
+    ["7463-accept"] = "7463-accept.wav",
+    ["7485-accept"] = "7485-accept.wav",
+    ["7492-complete"] = "7492-complete.wav",
+    ["7496-complete"] = "7496-complete.wav",
+    ["7541-complete"] = "7541-complete.wav",
+    ["758-accept"] = "758-accept.wav",
+    ["7583-complete"] = "7583-complete.wav",
+    ["7625-complete"] = "7625-complete.wav",
+    ["7627-complete"] = "7627-complete.wav",
+    ["7630-complete"] = "7630-complete.wav",
+    ["7640-complete"] = "7640-complete.wav",
+    ["7642-complete"] = "7642-complete.wav",
+    ["7645-complete"] = "7645-complete.wav",
+    ["7647-accept"] = "7647-accept.wav",
+    ["7668-complete"] = "7668-complete.wav",
+    ["7731-accept"] = "7731-accept.wav",
+    ["7733-accept"] = "7733-accept.wav",
+    ["7733-complete"] = "7733-complete.wav",
+    ["7789-accept"] = "7789-accept.wav",
+    ["7798-complete"] = "7798-complete.wav",
+    ["7803-complete"] = "7803-complete.wav",
+    ["7825-complete"] = "7825-complete.wav",
+    ["7827-complete"] = "7827-complete.wav",
+    ["7831-complete"] = "7831-complete.wav",
+    ["786-accept"] = "786-accept.wav",
+    ["7885-complete"] = "7885-complete.wav",
+    ["7889-complete"] = "7889-complete.wav",
+    ["789-complete"] = "789-complete.wav",
+    ["790-progress"] = "790-progress.wav",
+    ["7925-complete"] = "7925-complete.wav",
+    ["794-progress"] = "794-progress.wav",
+    ["806-complete"] = "806-complete.wav",
+    ["808-complete"] = "808-complete.wav",
+    ["815-complete"] = "815-complete.wav",
+    ["8156-accept"] = "8156-accept.wav",
+    ["8158-complete"] = "8158-complete.wav",
+    ["8165-accept"] = "8165-accept.wav",
+    ["8168-accept"] = "8168-accept.wav",
+    ["818-complete"] = "818-complete.wav",
+    ["8181-accept"] = "8181-accept.wav",
+    ["8182-accept"] = "8182-accept.wav",
+    ["8233-accept"] = "8233-accept.wav",
+    ["8276-complete"] = "8276-complete.wav",
+    ["8283-complete"] = "8283-complete.wav",
+    ["8284-complete"] = "8284-complete.wav",
+    ["8286-complete"] = "8286-complete.wav",
+    ["8306-complete"] = "8306-complete.wav",
+    ["8310-complete"] = "8310-complete.wav",
+    ["8320-accept"] = "8320-accept.wav",
+    ["833-complete"] = "833-complete.wav",
+    ["8331-accept"] = "8331-accept.wav",
+    ["8359-complete"] = "8359-complete.wav",
+    ["8361-complete"] = "8361-complete.wav",
+    ["8364-complete"] = "8364-complete.wav",
+    ["8388-complete"] = "8388-complete.wav",
+    ["8398-accept"] = "8398-accept.wav",
+    ["8400-accept"] = "8400-accept.wav",
+    ["8419-accept"] = "8419-accept.wav",
+    ["8437-accept"] = "8437-accept.wav",
+    ["8442-accept"] = "8442-accept.wav",
+    ["8443-accept"] = "8443-accept.wav",
+    ["845-accept"] = "845-accept.wav",
+    ["849-accept"] = "849-accept.wav",
+    ["8509-complete"] = "8509-complete.wav",
+    ["8527-complete"] = "8527-complete.wav",
+    ["853-complete"] = "853-complete.wav",
+    ["8548-accept"] = "8548-accept.wav",
+    ["8549-accept"] = "8549-accept.wav",
+    ["8556-complete"] = "8556-complete.wav",
+    ["8569-complete"] = "8569-complete.wav",
+    ["8578-complete"] = "8578-complete.wav",
+    ["8583-accept"] = "8583-accept.wav",
+    ["8584-complete"] = "8584-complete.wav",
+    ["8586-complete"] = "8586-complete.wav",
+    ["86-complete"] = "86-complete.wav",
+    ["860-accept"] = "860-accept.wav",
+    ["8605-complete"] = "8605-complete.wav",
+    ["8608-accept"] = "8608-accept.wav",
+    ["8614-complete"] = "8614-complete.wav",
+    ["8621-accept"] = "8621-accept.wav",
+    ["8624-complete"] = "8624-complete.wav",
+    ["8630-complete"] = "8630-complete.wav",
+    ["8631-accept"] = "8631-accept.wav",
+    ["8632-accept"] = "8632-accept.wav",
+    ["8634-accept"] = "8634-accept.wav",
+    ["8638-accept"] = "8638-accept.wav",
+    ["865-accept"] = "865-accept.wav",
+    ["8655-complete"] = "8655-complete.wav",
+    ["8666-accept"] = "8666-accept.wav",
+    ["8668-accept"] = "8668-accept.wav",
+    ["8672-complete"] = "8672-complete.wav",
+    ["8679-complete"] = "8679-complete.wav",
+    ["8680-complete"] = "8680-complete.wav",
+    ["869-accept"] = "869-accept.wav",
+    ["8701-complete"] = "8701-complete.wav",
+    ["8703-complete"] = "8703-complete.wav",
+    ["8706-complete"] = "8706-complete.wav",
+    ["8740-complete"] = "8740-complete.wav",
+    ["8746-complete"] = "8746-complete.wav",
+    ["8771-complete"] = "8771-complete.wav",
+    ["8776-complete"] = "8776-complete.wav",
+    ["8789-complete"] = "8789-complete.wav",
+    ["8790-accept"] = "8790-accept.wav",
+    ["8792-complete"] = "8792-complete.wav",
+    ["880-accept"] = "880-accept.wav",
+    ["8824-complete"] = "8824-complete.wav",
+    ["8827-complete"] = "8827-complete.wav",
+    ["8837-complete"] = "8837-complete.wav",
+    ["8848-complete"] = "8848-complete.wav",
+    ["887-complete"] = "887-complete.wav",
+    ["8899-complete"] = "8899-complete.wav",
+    ["8902-complete"] = "8902-complete.wav",
+    ["8904-complete"] = "8904-complete.wav",
+    ["8911-complete"] = "8911-complete.wav",
+    ["8914-accept"] = "8914-accept.wav",
+    ["8918-complete"] = "8918-complete.wav",
+    ["8925-accept"] = "8925-accept.wav",
+    ["8928-complete"] = "8928-complete.wav",
+    ["8929-accept"] = "8929-accept.wav",
+    ["8930-complete"] = "8930-complete.wav",
+    ["8931-accept"] = "8931-accept.wav",
+    ["8932-accept"] = "8932-accept.wav",
+    ["8950-complete"] = "8950-complete.wav",
+    ["8958-accept"] = "8958-accept.wav",
+    ["8962-accept"] = "8962-accept.wav",
+    ["8963-accept"] = "8963-accept.wav",
+    ["8967-accept"] = "8967-accept.wav",
+    ["8977-complete"] = "8977-complete.wav",
+    ["8985-complete"] = "8985-complete.wav",
+    ["8990-accept"] = "8990-accept.wav",
+    ["8995-accept"] = "8995-accept.wav",
+    ["8999-complete"] = "8999-complete.wav",
+    ["9004-complete"] = "9004-complete.wav",
+    ["9007-complete"] = "9007-complete.wav",
+    ["9012-complete"] = "9012-complete.wav",
+    ["9022-complete"] = "9022-complete.wav",
+    ["9025-complete"] = "9025-complete.wav",
+    ["9047-complete"] = "9047-complete.wav",
+    ["9054-accept"] = "9054-accept.wav",
+    ["9058-complete"] = "9058-complete.wav",
+    ["9071-complete"] = "9071-complete.wav",
+    ["9072-accept"] = "9072-accept.wav",
+    ["9073-complete"] = "9073-complete.wav",
+    ["9080-accept"] = "9080-accept.wav",
+    ["9080-complete"] = "9080-complete.wav",
+    ["9090-accept"] = "9090-accept.wav",
+    ["9096-complete"] = "9096-complete.wav",
+    ["9102-accept"] = "9102-accept.wav",
+    ["9103-complete"] = "9103-complete.wav",
+    ["9108-accept"] = "9108-accept.wav",
+    ["9110-accept"] = "9110-accept.wav",
+    ["9115-complete"] = "9115-complete.wav",
+    ["9121-complete"] = "9121-complete.wav",
+    ["9128-accept"] = "9128-accept.wav",
+    ["916-accept"] = "916-accept.wav",
+    ["9201-complete"] = "9201-complete.wav",
+    ["9221-accept"] = "9221-accept.wav",
+    ["9222-accept"] = "9222-accept.wav",
+    ["9228-accept"] = "9228-accept.wav",
+    ["9230-accept"] = "9230-accept.wav",
+    ["9236-accept"] = "9236-accept.wav",
+    ["9239-accept"] = "9239-accept.wav",
+    ["9245-complete"] = "9245-complete.wav",
+    ["9246-accept"] = "9246-accept.wav",
+    ["9246-complete"] = "9246-complete.wav",
+    ["9262-complete"] = "9262-complete.wav",
+    ["928-accept"] = "928-accept.wav",
+    ["928-complete"] = "928-complete.wav",
+    ["9295-complete"] = "9295-complete.wav",
+    ["93-accept"] = "93-accept.wav",
+    ["934-complete"] = "934-complete.wav",
+    ["9341-complete"] = "9341-complete.wav",
+    ["935-complete"] = "935-complete.wav",
+    ["9415-accept"] = "9415-accept.wav",
+    ["9416-accept"] = "9416-accept.wav",
+    ["9416-complete"] = "9416-complete.wav",
+    ["962-accept"] = "962-accept.wav",
+    ["969-complete"] = "969-complete.wav",
+    ["970-accept"] = "970-accept.wav",
+    ["972-complete"] = "972-complete.wav",
+    ["977-complete"] = "977-complete.wav",
+    ["978-complete"] = "978-complete.wav",
+    ["979-complete"] = "979-complete.wav",
+    ["985-accept"] = "985-accept.wav",
+    ["994-complete"] = "994-complete.wav",
+    ["f-1783-complete"] = "f-1783-complete.wav",
+    ["f-2981-accept"] = "f-2981-accept.wav",
+    ["f-4295-complete"] = "f-4295-complete.wav",
+    ["f-463-accept"] = "f-463-accept.wav",
+    ["f-5508-complete"] = "f-5508-complete.wav",
+    ["f-7123-complete"] = "f-7123-complete.wav",
+    ["f-7940-complete"] = "f-7940-complete.wav",
+    ["f-8359-accept"] = "f-8359-accept.wav",
+    ["f-8514-complete"] = "f-8514-complete.wav",
+    ["f-8797-complete"] = "f-8797-complete.wav",
+    ["f-8801-complete"] = "f-8801-complete.wav",
+    ["f-8859-complete"] = "f-8859-complete.wav",
+    ["m-1222-accept"] = "m-1222-accept.wav",
+    ["m-1649-complete"] = "m-1649-complete.wav",
+    ["m-1661-accept"] = "m-1661-accept.wav",
+    ["m-196-complete"] = "m-196-complete.wav",
+    ["m-337-complete"] = "m-337-complete.wav",
+    ["m-400-complete"] = "m-400-complete.wav",
+    ["m-7622-complete"] = "m-7622-complete.wav",
+    ["m-7933-complete"] = "m-7933-complete.wav",
+    ["m-7934-complete"] = "m-7934-complete.wav",
+    ["m-7940-complete"] = "m-7940-complete.wav",
+    ["m-8359-accept"] = "m-8359-accept.wav",
+    ["m-8366-complete"] = "m-8366-complete.wav",
+    ["m-8795-complete"] = "m-8795-complete.wav",
+    ["m-8857-complete"] = "m-8857-complete.wav",
+    ["m-9267-complete"] = "m-9267-complete.wav",
+}
+
 function Enums.SoundEvent:IsQuestEvent(event)
     return event == self.QuestAccept or event == self.QuestProgress or event == self.QuestComplete
 end
@@ -345,7 +1080,7 @@ function Utils:PlaySound(soundData)
     -- gossip mute may have muted everything)
     self:RestoreSoundSettings()
     local ok = pcall(PlaySoundFile, soundData.filePath)
-    Debug:Print("play %s -> %s", tostring(soundData.fileName or "?"), tostring(ok))
+    Debug:Print("play %s -> %s path=%s vol=%s/%s", tostring(soundData.fileName or "?"), tostring(ok), tostring(soundData.filePath or "?"), tostring(GetCVar("MasterVolume")), tostring(GetCVar("SoundVolume")))
     return ok
 end
 
@@ -721,6 +1456,13 @@ function DataModules:PrepareSound(soundData)
                 soundData.filePath = format("../../Interface/AddOns/%s/%s", module.METADATA.AddonName,
                     (module.GetSoundPath and module:GetSoundPath(soundData.fileName, soundData.event)) or
                     soundData.fileName)
+                -- WAV override: a few ogg files hang the client's ogg decoder;
+                -- the data pack ships those as .wav and we play them instead.
+                local overrideName = QuestEcho.WavOverride[soundData.fileName] or
+                    QuestEcho.WavOverride[soundData.fileName:gsub("_[mf]$", "")]
+                if overrideName then
+                    soundData.filePath = soundData.filePath:gsub("[^/\\]+$", overrideName)
+                end
                 soundData.length = length
                 soundData.module = module
                 return true
@@ -823,6 +1565,7 @@ function SoundQueue:PlayPriority(soundData)
     end
     if self.gossipPending then
         self.gossipPending = nil
+        self.gossipRestored = nil
         self.gossipRestoreAt = nil
     end
     if self.current then
@@ -863,6 +1606,7 @@ function SoundQueue:PlayNextSound()
         -- starts the file on the next tick so the mute lands first.
         Utils:MuteSound()
         self.gossipPending = soundData
+        self.gossipRestored = nil
         self.gossipRestoreAt = GetTime() + 0.15
         SoundQueueUI:Update()
         return
@@ -909,7 +1653,17 @@ function SoundQueue:OnUpdate()
     -- (or drop it if paused — but never leave everything muted)
     if self.gossipPending and GetTime() >= (self.gossipRestoreAt or 0) then
         local soundData = self.gossipPending
+        -- wav playback honors the mute CVars more than ogg does: restore the
+        -- volume, then wait one more beat so the client's audio engine has
+        -- actually left the muted state before the file starts.
+        if not self.gossipRestored and soundData.filePath and soundData.filePath:find("%.wav$", 1) then
+            self.gossipRestored = true
+            Utils:RestoreSoundSettings()
+            self.gossipRestoreAt = GetTime() + 0.3
+            return
+        end
         self.gossipPending = nil
+        self.gossipRestored = nil
         self.gossipRestoreAt = nil
         if not Addon.db.char.IsPaused then
             Utils:PlaySound(soundData)
@@ -983,6 +1737,7 @@ function SoundQueue:RemoveAllSoundsFromQueue()
     self.pendingNextAt = nil
     if self.gossipPending then
         self.gossipPending = nil
+        self.gossipRestored = nil
         self.gossipRestoreAt = nil
     end
     if self.current then
@@ -1013,6 +1768,7 @@ function SoundQueue:RemoveSound(id)
         self.nextSoundAt = nil
         if self.gossipPending then
             self.gossipPending = nil
+            self.gossipRestored = nil
             self.gossipRestoreAt = nil
         end
         -- keep the mute until the stopped line would have ended, then restore
@@ -2731,7 +3487,7 @@ local GOSSIP_NAMES =
 }
 
 local function Help()
-    Print("|cff33ffccQuestEcho (Emberveil)|r 1.5.0 — voice lines for quests and gossip")
+    Print("|cff33ffccQuestEcho (Emberveil)|r 1.5.1 — voice lines for quests and gossip")
     Print("|cff33ffcc/qe|r — this help")
     Print("|cff33ffcc/qe pause|r — pause/resume the voice line queue")
     Print("|cff33ffcc/qe clear|r — clear the queue and stop the current line")
@@ -2864,6 +3620,88 @@ local function HandleSlashCommand(input)
                 Print(format("|cff33ffcc[QuestEcho]|r played %s (%s) -> %s", tostring(sd.fileName), tostring(sd.filePath), tostring(okPlay)))
             else
                 Print(format("|cffff3333[QuestEcho]|r no voice line for quest %d", qid))
+            end
+        end
+    elseif command == "playfile" or command == "pf" then
+        local sub, name = arg:match("^(%S+)%s+(%S+)$")
+        if not sub or not name then
+            Print("|cffff3333[QuestEcho]|r usage: /qe playfile <quests|gossip> <name[.ogg|.wav]> (plays the raw file directly, no queue)")
+        else
+            if not name:find("%.") then
+                name = name .. ".ogg"
+            end
+            local p = format("../../Interface/AddOns/QuestEchoData/generated/sounds/%s/%s", sub, name)
+            Print(format("|cff33ffcc[QuestEcho]|r playing: %s", p))
+            local ok = pcall(PlaySoundFile, p)
+            Print(format("|cff33ffcc[QuestEcho]|r PlaySoundFile -> %s", tostring(ok)))
+        end
+    elseif command == "wavtest" then
+        -- diagnostic: is the mute->restore flow what kills wav playback?
+        local function afterDelay(delay, fn)
+            local f = CreateFrame("Frame")
+            f.at = GetTime() + delay
+            f:SetScript("OnUpdate", function()
+                if GetTime() >= f.at then
+                    f:SetScript("OnUpdate", nil)
+                    fn()
+                end
+            end)
+        end
+        local p = "../../Interface/AddOns/QuestEchoData/generated/sounds/gossip/6d671d26f71829b3cfdafaf53866d6f0.wav"
+        Print("|cff33ffcc[QuestEcho]|r -- wavtest A: direct play (should be audible) --")
+        local okA = pcall(PlaySoundFile, p)
+        Print(format("|cff33ffcc[QuestEcho]|r A -> %s", tostring(okA)))
+        afterDelay(2.0, function()
+            Print("|cff33ffcc[QuestEcho]|r -- wavtest B: mute -> restore -> play --")
+            Utils:MuteSound()
+            afterDelay(0.15, function()
+                Utils:RestoreSoundSettings()
+                local okB = pcall(PlaySoundFile, p)
+                Print(format("|cff33ffcc[QuestEcho]|r B -> %s vol=%s/%s", tostring(okB), tostring(GetCVar("MasterVolume")), tostring(GetCVar("SoundVolume"))))
+            end)
+        end)
+    elseif command == "selftest" or command == "st" then
+        local filter, startArg, gapArg = arg:match("^(%S*)%s*(%d*)%s*(%d*)$")
+        local files = (DataModules:GetModule("QuestEchoData") and QuestEchoData.SelftestFiles) or nil
+        if not files then
+            Print("|cffff3333[QuestEcho]|r selftest: QuestEchoData selftest list not found")
+        else
+            local list = {}
+            for i = 1, #files do
+                local e = files[i]
+                if filter == "" or e.dir == filter then
+                    table.insert(list, e)
+                end
+            end
+            local startIdx = tonumber(startArg) or 1
+            local gap = tonumber(gapArg) or 0.5
+            if startIdx > #list then
+                Print(format("|cffff3333[QuestEcho]|r selftest: start %d out of range (1..%d)", startIdx, #list))
+            else
+                Print(format("|cff33ffcc[QuestEcho]|r selftest: %s (%d files) from %d, one every %gs. Turn game volume to minimum first (decode still runs). If the game hangs, the last printed file is the culprit; restart and continue with the next index.", filter == "" and "all" or filter, #list, startIdx, gap))
+                local sf = CreateFrame("Frame")
+                sf.list = list
+                sf.index = startIdx
+                sf.gap = gap
+                sf:SetScript("OnUpdate", function()
+                    if GetTime() < (sf.nextAt or 0) then
+                        return
+                    end
+                    local e = sf.list[sf.index]
+                    if not e then
+                        sf:SetScript("OnUpdate", nil)
+                        Print("|cff33ffcc[QuestEcho]|r selftest done")
+                        return
+                    end
+                    local p = format("../../Interface/AddOns/QuestEchoData/generated/sounds/%s/%s", e.dir, e.file)
+                    Print(format("|cff33ffcc[QuestEcho]|r [%d/%d] %s/%s", sf.index, #sf.list, e.dir, e.file))
+                    local ok = pcall(PlaySoundFile, p)
+                    if not ok then
+                        Print(format("|cffff3333[QuestEcho]|r   PlaySoundFile FAILED: %s", p))
+                    end
+                    sf.index = sf.index + 1
+                    sf.nextAt = GetTime() + sf.gap
+                end)
             end
         end
     elseif command == "diagquest" then
