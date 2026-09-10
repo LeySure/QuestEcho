@@ -13,9 +13,9 @@ Chat command: `/qe`
 > ⚠️ This addon **requires language‑specific audio data pack**. Core addon alone has no sound.
 
 ## Downloads
-- Main Addon: [QuestEcho‑1.5.1.zip](https://github.com/LeySure/QuestEcho/releases/download/v1.5.1/QuestEcho-1.5.0.zip)
+- Main Addon: [QuestEcho‑1.5.1.zip](https://github.com/LeySure/QuestEcho/releases/download/1.5.1/QuestEcho-1.5.1.zip)
 - Audio Data Packs (pick one matching your game client language):
-  - enUS: [QuestEchoData‑enUS.zip](https://github.com/LeySure/QuestEcho/releases/download/v1.5.1/QuestEchoData-enUS.zip)
+  - enUS: [QuestEchoData‑enUS.zip](https://github.com/LeySure/QuestEcho/releases/download/1.5.1/QuestEchoData-enUS.zip)
   - zhCN: (coming soon)
   - ruRU: (coming soon)
 
