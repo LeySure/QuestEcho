@@ -16,7 +16,7 @@ Chat command: `/qe`
 - Main Addon: [QuestEcho‑1.5.1.zip](https://github.com/LeySure/QuestEcho/releases/download/1.5.1/QuestEcho-1.5.1.zip)
 - Audio Data Packs (pick one matching your game client language):
   - enUS: [QuestEchoData‑enUS.zip](https://github.com/LeySure/QuestEcho/releases/download/1.5.1/QuestEchoData-enUS.zip)
-  - zhCN: (coming soon)
+  - zhCN: [QuestEchoData-zhCN.zip](https://github.com/LeySure/QuestEcho/releases/download/1.5.2/QuestEchoData-zhCN.zip)
   - ruRU: (coming soon)
 
 ## Installation
