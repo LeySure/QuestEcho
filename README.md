@@ -16,7 +16,7 @@ Chat command: `/qe`
 ## Downloads
 - Main Addon: [QuestEcho‑1.5.2.zip](https://github.com/LeySure/QuestEcho/releases/download/1.5.2/QuestEcho-1.5.2.zip)
 - Audio Data Packs:
-  - enUS: [QuestEchoData-enUS.zip](https://github.com/LeySure/QuestEcho/releases/download/1.5.2/QuestEchoData-enUS.zip) — extract to folder **`QuestEchoData`**
+  - enUS: [QuestEchoData-enUS.zip](https://github.com/LeySure/QuestEcho/releases/download/1.5.1/QuestEchoData-enUS.zip) — extract to folder **`QuestEchoData`**
   - zhCN: [QuestEchoData-zhCN.zip](https://github.com/LeySure/QuestEcho/releases/download/1.5.2/QuestEchoData-zhCN.zip) — extract to folder **`QuestEchoData-zhCN`**
   - ruRU: (coming soon)
 ## Installation
@@ -50,7 +50,7 @@ QuestEcho 是 Emberveil（1.12.1）语音插件。接取、完成任务以及NPC
 > ⚠️ 本体插件**不包含语音**，必须安装对应语言数据包才有声音。
 ### 下载
 - 主插件：[QuestEcho‑1.5.2.zip](https://github.com/LeySure/QuestEcho/releases/download/1.5.2/QuestEcho-1.5.2.zip)
-- 英文数据包：[QuestEchoData-enUS.zip](https://github.com/LeySure/QuestEcho/releases/download/1.5.2/QuestEchoData-enUS.zip) — 解压后文件夹名 **`QuestEchoData`**
+- 英文数据包：[QuestEchoData-enUS.zip](https://github.com/LeySure/QuestEcho/releases/download/1.5.1/QuestEchoData-enUS.zip) — 解压后文件夹名 **`QuestEchoData`**
 - 中文数据包：[QuestEchoData-zhCN.zip](https://github.com/LeySure/QuestEcho/releases/download/1.5.2/QuestEchoData-zhCN.zip) — 解压后文件夹名 **`QuestEchoData-zhCN`**
 ### 安装
 1. 将 `QuestEcho` 解压到 `Interface/AddOns`
