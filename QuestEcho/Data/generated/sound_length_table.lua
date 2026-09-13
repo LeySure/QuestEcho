@@ -1,4 +1,5 @@
 if not QuestEcho or not QuestEcho.DataModules then return end
+if GetLocale() == "zhCN" then return end
 QuestEchoData.SoundLengthLookupByFileName = {
     ["00008c92982d394e12b610e2f162f1fb"] = 5.19825,
     ["00076a2f6e55d2922d9773ef70577aa5"] = 10.63175,

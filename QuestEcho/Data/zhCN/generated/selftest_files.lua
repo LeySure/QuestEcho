@@ -1,5 +1,5 @@
 if not QuestEcho or not QuestEcho.DataModules then return end
-if GetLocale() == "zhCN" then return end
+if GetLocale() ~= "zhCN" then return end
 QuestEchoData.SelftestFiles = {
     { dir = "quests", file = "10-accept.ogg" },
     { dir = "quests", file = "10-complete.ogg" },

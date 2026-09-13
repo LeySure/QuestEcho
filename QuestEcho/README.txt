@@ -1,4 +1,4 @@
-QuestEcho — Emberveil port (v1.5.1)
+QuestEcho — Emberveil port (v1.5.2)
 ==========================================
 
 IMPORTANT — sound files

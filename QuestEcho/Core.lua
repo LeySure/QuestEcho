@@ -75,6 +75,20 @@ QuestEcho.Enums =
 
 local Enums = QuestEcho.Enums
 
+-- =============================================================================
+-- Localization (zhCN / enUS)
+-- =============================================================================
+local okLocale, LOCALE = pcall(GetLocale)
+if not okLocale then
+    LOCALE = "enUS"
+end
+local function L(en, zh)
+    if LOCALE == "zhCN" then
+        return zh or en
+    end
+    return en
+end
+
 --- Voice files that hang the client's ogg decoder (no static signature found:
 --- identical encoding/structure/decode in ffmpeg, libvorbis and stb_vorbis, only
 --- the in-game PlaySoundFile hangs). These are shipped as .wav in the data pack
@@ -845,6 +859,11 @@ local DEFAULTS =
         -- the removed line's tail may keep playing for that long. "full"
         -- waits until the removed line would have ended (cleanest, slowest).
         StopWait = 0.5,
+        -- QuestEcho's own voice volume multiplier, applied per file at play
+        -- time. Independent of the game's MasterVolume/SoundVolume sliders:
+        -- changing this only affects voice lines, not combat or other sounds.
+        -- 1.0 = no change; range 0.25 - 3.0 in 0.25 steps.
+        VoiceVolume = 1.0,
     },
     char =
     {
@@ -1072,6 +1091,43 @@ function Utils:MuteSound()
     end
 end
 
+-- Deferred play state: a voice-volume-scaled line must wait one beat before
+-- PlaySoundFile so the client (which applies CVar changes on its own frame)
+-- actually plays at the scaled volume. Same reasoning as the gossip mute
+-- window — scaling and starting the file in the same Lua frame never lands.
+Utils.voiceDeferred = nil
+
+function Utils:DeferPlay(soundData, delay)
+    self:CancelDeferred()
+    local f = CreateFrame("Frame")
+    local start = GetTime()
+    local svc = self
+    f:SetScript("OnUpdate", function()
+        if GetTime() - start < delay then
+            return
+        end
+        f:SetScript("OnUpdate", nil)
+        f:Hide()
+        local pending = svc.voiceDeferred
+        if pending and pending.soundData == soundData then
+            svc.voiceDeferred = nil
+        end
+        local ok = pcall(PlaySoundFile, soundData.filePath)
+        Debug:Print("play %s (deferred) -> %s path=%s vol=%s/%s", tostring(soundData.fileName or "?"), tostring(ok), tostring(soundData.filePath or "?"), tostring(GetCVar("MasterVolume")), tostring(GetCVar("SoundVolume")))
+    end)
+    self.voiceDeferred = { frame = f, soundData = soundData }
+    f:Show()
+end
+
+function Utils:CancelDeferred()
+    if self.voiceDeferred then
+        local pending = self.voiceDeferred
+        self.voiceDeferred = nil
+        pcall(pending.frame.SetScript, pending.frame, "OnUpdate", nil)
+        pcall(pending.frame.Hide, pending.frame)
+    end
+end
+
 function Utils:PlaySound(soundData)
     if not soundData.filePath then
         return false
@@ -1079,8 +1135,36 @@ function Utils:PlaySound(soundData)
     -- bring the volume back before our file starts (a previous stop or the
     -- gossip mute may have muted everything)
     self:RestoreSoundSettings()
+    -- QuestEcho's own voice volume multiplier. This client's PlaySoundFile
+    -- has no per-file volume argument (its 2nd arg is a channel name like
+    -- "Master"), so the multiplier is applied by scaling the game's volume
+    -- CVars for the duration of this file; the queue restores the baseline
+    -- once the line ends (PlayNextSound / mute restore). VoiceVolume is
+    -- independent of the game sliders (it never changes them permanently).
+    local vol = Addon.db.profile.VoiceVolume or 1
+    if vol and vol ~= 1 then
+        local base = self:GetBaselineSoundSettings()
+        for _, name in ipairs(self.SOUND_CVARS) do
+            local bv = base and base[name] and tonumber(base[name]) or 1
+            if bv and bv > 0 then
+                -- No clamp to 1: if the player's game volume is already at
+                -- the top, a >1 multiplier would otherwise never change
+                -- anything. This client's CVars tolerate over-1 values; a
+                -- client that clamps simply caps the effect at the top.
+                local scaled = bv * vol
+                pcall(SetCVar, name, scaled)
+            end
+        end
+        -- The client applies CVar changes on its own frame, so a file started
+        -- in the same frame would play at the old volume. Defer the actual
+        -- PlaySoundFile until the scale has landed.
+        soundData._deferred = 0.3
+        self:DeferPlay(soundData, soundData._deferred)
+        return true
+    end
+    soundData._deferred = nil
     local ok = pcall(PlaySoundFile, soundData.filePath)
-    Debug:Print("play %s -> %s path=%s vol=%s/%s", tostring(soundData.fileName or "?"), tostring(ok), tostring(soundData.filePath or "?"), tostring(GetCVar("MasterVolume")), tostring(GetCVar("SoundVolume")))
+    Debug:Print("play %s -> %s path=%s vol=%s/%s voice=%.2f", tostring(soundData.fileName or "?"), tostring(ok), tostring(soundData.filePath or "?"), tostring(GetCVar("MasterVolume")), tostring(GetCVar("SoundVolume")), vol or 1)
     return ok
 end
 
@@ -1239,7 +1323,7 @@ end
 --- Register a data module. Duplicate-safe: if the same module is registered
 --- again (e.g. the standalone pack loaded after the bundled Data\ copy), the
 --- new module table replaces the old one so fresh data wins.
-function DataModules:Register(name, module)
+function DataModules:Register(name, module, addonNameOverride)
     if self.registeredModules[name] then
         for i, m in ipairs(self.registeredModulesOrdered) do
             if m == self.registeredModules[name] then
@@ -1261,7 +1345,7 @@ function DataModules:Register(name, module)
         -- before the addon list was ready.
         metadata =
         {
-            AddonName = name,
+            AddonName = addonNameOverride or name,
             LoadOnDemand = false,
             ModuleVersion = 1,
             ModulePriority = 0,
@@ -1271,6 +1355,11 @@ function DataModules:Register(name, module)
         }
         self.presentModules[name] = metadata
         table.insert(self.presentModulesOrdered, metadata)
+    elseif addonNameOverride and metadata.AddonName ~= addonNameOverride then
+        -- The data pack directory may differ from the registered module name
+        -- (e.g. QuestEchoData-zhCN registers as QuestEchoData). The sound path
+        -- is built from AddonName, so point it at the real directory.
+        metadata.AddonName = addonNameOverride
     end
 
     module.METADATA = metadata
@@ -1555,6 +1644,15 @@ function SoundQueue:AddSoundToQueue(soundData)
     return true
 end
 
+-- How long to keep everything muted after a line is removed before the next
+-- line starts. The client applies CVar changes on its own frame, so an
+-- immediate restore in the same frame would never mute (and the removed
+-- sound would keep playing under the next one). The priority preempts
+-- (PlayPriority / PlayPriorityKeep) use the same buffer: the mute needs a
+-- beat to actually stop the old file before the new line starts, otherwise
+-- both files play together.
+local SOUND_SWITCH_BUFFER = 0.25
+
 --- Play a line with priority (used when the quest-reward window opens):
 --- cut whatever is playing (e.g. a gossip line) and queued gossip lines, and
 --- start this line immediately.
@@ -1568,6 +1666,8 @@ function SoundQueue:PlayPriority(soundData)
         self.gossipRestored = nil
         self.gossipRestoreAt = nil
     end
+    -- a volume-deferred line must not start after it is pre-empted
+    Utils:CancelDeferred()
     if self.current then
         Utils:StopSound(self.current)
         self.current = nil
@@ -1586,12 +1686,79 @@ function SoundQueue:PlayPriority(soundData)
     soundData.id = self.soundIdCounter
     table.insert(self.sounds, 1, soundData)
     self:PlayNextSound()
+    return true
+end
+
+--- Play a line with priority, but keep every line that was already playing or
+--- queued: stop the current line and move it to the BACK of the queue (so it
+--- resumes after the priority line), leave queued gossip alone, and start the
+--- new line immediately. Used when the player opens a quest detail (accept)
+--- window while other voices are playing — the quest the player is looking at
+--- gets to go first, nothing is lost.
+function SoundQueue:PlayPriorityKeep(soundData)
+    -- resolve filePath/length exactly like AddSoundToQueue does
+    if not DataModules:PrepareSound(soundData) then
+        return false
+    end
+    if not Utils:IsSoundEnabled() then
+        Debug:Print("sound is turned off in the game options")
+        return false
+    end
+
+    -- don't queue the same line twice
+    for _, queuedSound in ipairs(self.sounds) do
+        if queuedSound.fileName == soundData.fileName then
+            return false
+        end
+    end
+    if self.current and self.current.fileName == soundData.fileName then
+        return false
+    end
+
+    -- a line is currently playing: stop it and re-queue it at the back
+    if self.current then
+        local deferred = self.current
+        local length = deferred.length
+        local startedAt = deferred.startedAt
+        -- a volume-deferred line must not start after it is pre-empted
+        Utils:CancelDeferred()
+        Utils:StopSound(deferred)
+        self.current = nil
+        self.nextSoundAt = nil
+        if self.gossipPending then
+            self.gossipPending = nil
+            self.gossipRestored = nil
+            self.gossipRestoreAt = nil
+        end
+        -- keep the mute on long enough that the client actually stops the old
+        -- file (CVar changes apply on its own frame); an immediate restore
+        -- would let the deferred line keep playing under the priority one.
+        self:ScheduleMuteRestore(length, startedAt)
+        table.insert(self.sounds, deferred)
+        -- let the mute take effect before the priority line starts
+        self.pendingNextAt = GetTime() + SOUND_SWITCH_BUFFER
+    end
+
+    -- insert the priority line at the front and start it immediately
+    self.soundIdCounter = self.soundIdCounter + 1
+    soundData.id = self.soundIdCounter
+    table.insert(self.sounds, 1, soundData)
+    -- If a previous line was playing we defer the start by SOUND_SWITCH_BUFFER
+    -- (handled in OnUpdate via pendingNextAt); otherwise start right away.
+    if not self.pendingNextAt then
+        self:PlayNextSound()
+    end
+    SoundQueueUI:Update()
+    return true
 end
 
 function SoundQueue:PlayNextSound()
     local soundData = self.sounds[1]
     if not soundData then
-        -- queue is empty: refresh the UI so the "playing" row disappears
+        -- queue is empty: bring the player's own volume settings back (a
+        -- VoiceVolume scale may be active on the just-finished line) and
+        -- refresh the UI so the "playing" row disappears
+        Utils:RestoreSoundSettings()
         SoundQueueUI:Update()
         return
     end
@@ -1613,7 +1780,7 @@ function SoundQueue:PlayNextSound()
     end
 
     Utils:PlaySound(soundData)
-    self.nextSoundAt = GetTime() + (soundData.delay or 0) + (soundData.length or 0) + 0.5
+    self.nextSoundAt = GetTime() + (soundData.delay or 0) + (soundData.length or 0) + 0.5 + (soundData._deferred or 0)
     Debug:Print("playing: %s (%.1fs)", tostring(soundData.fileName), soundData.length or 0)
     SoundQueueUI:Update()
 end
@@ -1667,7 +1834,7 @@ function SoundQueue:OnUpdate()
         self.gossipRestoreAt = nil
         if not Addon.db.char.IsPaused then
             Utils:PlaySound(soundData)
-            self.nextSoundAt = GetTime() + (soundData.delay or 0) + (soundData.length or 0) + 0.5
+            self.nextSoundAt = GetTime() + (soundData.delay or 0) + (soundData.length or 0) + 0.5 + (soundData._deferred or 0)
             Debug:Print("playing: %s (%.1fs)", tostring(soundData.fileName), soundData.length or 0)
         else
             Utils:RestoreSoundSettings()
@@ -1705,6 +1872,8 @@ function SoundQueue:PauseQueue()
         return
     end
     Addon.db.char.IsPaused = true
+    -- a volume-deferred line must not start after the pause
+    Utils:CancelDeferred()
     if self.current then
         Utils:StopSound(self.current)
     end
@@ -1719,7 +1888,7 @@ function SoundQueue:ResumeQueue()
     -- This client cannot resume mid-file; restart the current line.
     if self.current then
         Utils:PlaySound(self.current)
-        self.nextSoundAt = GetTime() + (self.current.delay or 0) + (self.current.length or 0) + 0.5
+        self.nextSoundAt = GetTime() + (self.current.delay or 0) + (self.current.length or 0) + 0.5 + (self.current._deferred or 0)
     end
     SoundQueueUI:Update()
 end
@@ -1735,6 +1904,8 @@ end
 function SoundQueue:RemoveAllSoundsFromQueue()
     self.sounds = {}
     self.pendingNextAt = nil
+    -- a volume-deferred line must not start after the queue is cleared
+    Utils:CancelDeferred()
     if self.gossipPending then
         self.gossipPending = nil
         self.gossipRestored = nil
@@ -1753,14 +1924,9 @@ function SoundQueue:RemoveAllSoundsFromQueue()
 end
 
 --- Remove one line by its id: the current line stops, a queued line drops out.
--- How long to keep everything muted after a line is removed before the next
--- line starts. The client applies CVar changes on its own frame, so an
--- immediate restore in the same frame would never mute (and the removed
--- sound would keep playing under the next one).
-local SOUND_SWITCH_BUFFER = 0.25
-
 function SoundQueue:RemoveSound(id)
     if self.current and self.current.id == id then
+        Utils:CancelDeferred()
         Utils:StopSound(self.current)
         local length = self.current.length
         local startedAt = self.current.startedAt
@@ -1901,7 +2067,7 @@ local function FormatStatus()
 
     local text
     if Addon.db.char.IsPaused then
-        text = "|cffffcc00[QuestEcho paused]|r"
+        text = format("|cffffcc00%s|r", L("[QuestEcho paused]", "[QuestEcho 已暂停]"))
     elseif current then
         local label = current.title or current.name or current.fileName or "?"
         text = format("%s%s|r", ColorForEvent(current.event), label)
@@ -1909,15 +2075,45 @@ local function FormatStatus()
             text = text .. format("  |cffcccccc(+%d)|r", queued)
         end
     elseif queued > 0 then
-        text = format("|cffcccccc[QuestEcho %d queued...]|r", queued)
+        text = format("|cffcccccc%s|r", format(L("[QuestEcho %d queued...]", "[QuestEcho %d 排队中...]"), queued))
     else
-        text = "|cff33ffcc[QuestEcho ready]|r"
+        text = format("|cff33ffcc%s|r", L("[QuestEcho ready]", "[QuestEcho 就绪]"))
     end
     return text
 end
 
 local QUEUE_ROW_HEIGHT = 18
 local QUEUE_MAX_ROWS = 12
+
+-- Apply the saved status bar position (clamped to the screen), or default to
+-- 96px above the screen bottom (clears the experience bar; the bar grows
+-- upward when the queue is shown). A bad saved position must never break the
+-- caller. Also called again from the timer frame after the client injects the
+-- SavedVariables global (which happens AFTER file-level Create on this client),
+-- so the saved position is applied even when Create ran too early to see it.
+function SoundQueueUI:ApplySavedPos()
+    local frame = self.frame
+    if not frame then
+        return
+    end
+    local savedPos = Addon.db.profile.StatusBarPos
+    if savedPos and type(savedPos[1]) == "number" and type(savedPos[2]) == "number" then
+        local okW, w = pcall(UIParent.GetWidth, UIParent)
+        local okH, h = pcall(UIParent.GetHeight, UIParent)
+        local px, py = savedPos[1], savedPos[2]
+        if okW and w and px + frame:GetWidth() > w then
+            px = w - frame:GetWidth()
+        end
+        if okH and h and py + frame:GetHeight() > h then
+            py = h - frame:GetHeight()
+        end
+        if px < 0 then px = 0 end
+        if py < 0 then py = 0 end
+        pcall(frame.SetPoint, frame, "BOTTOMLEFT", UIParent, "BOTTOMLEFT", px, py)
+    else
+        pcall(frame.SetPoint, frame, "BOTTOM", UIParent, "BOTTOM", 0, 96)
+    end
+end
 
 function SoundQueueUI:Create()
     if self.frame then
@@ -1927,9 +2123,8 @@ function SoundQueueUI:Create()
     local frame = CreateFrame("Frame", "QuestEchoStatusFrame", UIParent)
     frame:SetWidth(320)
     frame:SetHeight(24)
-    -- 96px above the screen bottom clears the experience bar (Unreal-rendered);
-    -- the bar grows upward when the queue is shown and stays draggable.
-    frame:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, 96)
+    self.frame = frame
+    self:ApplySavedPos()
     frame:SetClampedToScreen(true)
     frame:EnableMouse(true)
     ApplyClassicBackdropResizable(frame)
@@ -1973,9 +2168,23 @@ function SoundQueueUI:Create()
         if ny < 0 then ny = 0 end
         frame:ClearAllPoints()
         frame:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", nx, ny)
+        -- Persist every frame while dragging: OnMouseUp may never fire on this
+        -- client if the cursor leaves the small frame before the button is
+        -- released, so the position must be saved as the drag happens.
+        Addon.db.profile.StatusBarPos = { nx, ny }
+        -- Remember the exact anchor params so OnMouseUp can persist them in the
+        -- same coordinate space (avoiding a GetLeft/GetBottom re-conversion).
+        frame.lastDragX, frame.lastDragY = nx, ny
     end)
     frame:SetScript("OnMouseUp", function()
+        if not frame.dragging then
+            return
+        end
         frame.dragging = false
+        -- Persist the position so the bar stays where the player put it.
+        if frame.lastDragX and frame.lastDragY then
+            Addon.db.profile.StatusBarPos = { frame.lastDragX, frame.lastDragY }
+        end
     end)
 
     local status = frame:CreateFontString("QuestEchoStatusText", "OVERLAY", "GameFontWhite")
@@ -2153,7 +2362,7 @@ function SoundQueueUI:RebuildRows()
             local sound = entry.sound
             local labelText = sound.title or sound.name or sound.fileName or "?"
             if entry.playing then
-                local state = paused and "(paused)" or "(playing)"
+                local state = paused and L("(paused)", "(已暂停)") or L("(playing)", "(播放中)")
                 row.label:SetText(format("|cffffd24a>|r %s%s|r  |cffcccccc%s|r",
                     ColorForEvent(sound.event), labelText, state))
                 row.rowBg:SetTexture(1.00, 0.82, 0.31, 0.12)
@@ -2282,7 +2491,7 @@ function QuestLogUI:Create()
 
     local title = frame:CreateFontString(nil, "OVERLAY", "GameFontWhite")
     title:SetPoint("TOPLEFT", frame, "TOPLEFT", 8, -8)
-    title:SetText("QuestEcho — Quest Replay")
+    title:SetText(L("QuestEcho — Quest Replay", "QuestEcho — 任务语音回放"))
     pcall(title.SetFont, title, FONT, 13)
 
     local closeButton = CreateFrame("Button", nil, frame)
@@ -2313,12 +2522,12 @@ function QuestLogUI:Create()
 
     local hQuest = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     hQuest:SetPoint("TOPLEFT", frame, "TOPLEFT", 10, -32)
-    hQuest:SetText("Quest")
+    hQuest:SetText(L("Quest", "任务"))
     pcall(hQuest.SetFont, hQuest, FONT, 10)
 
     local hPlay = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     hPlay:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -94, -32)
-    hPlay:SetText("accept | complete")
+    hPlay:SetText(L("accept | complete", "接取 | 完成"))
     pcall(hPlay.SetFont, hPlay, FONT, 10)
 
     self.rows = {}
@@ -2340,7 +2549,7 @@ function QuestLogUI:Create()
         acceptButton:SetPoint("RIGHT", row, "RIGHT", -94, 0)
         local acceptText = acceptButton:CreateFontString(nil, "OVERLAY", "GameFontWhite")
         acceptText:SetPoint("CENTER")
-        acceptText:SetText("accept")
+        acceptText:SetText(L("accept", "接取"))
         pcall(acceptText.SetFont, acceptText, FONT, 10)
 
         local completeButton = CreateFrame("Button", nil, row)
@@ -2349,7 +2558,7 @@ function QuestLogUI:Create()
         completeButton:SetPoint("RIGHT", row, "RIGHT", -4, 0)
         local completeText = completeButton:CreateFontString(nil, "OVERLAY", "GameFontWhite")
         completeText:SetPoint("CENTER")
-        completeText:SetText("complete")
+        completeText:SetText(L("complete", "完成"))
         pcall(completeText.SetFont, completeText, FONT, 10)
 
         acceptButton:SetScript("OnClick", function()
@@ -2456,7 +2665,7 @@ function QuestLogUI:Update(forceReload)
     if empty and not self.emptyNote then
         self.emptyNote = self.frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         self.emptyNote:SetPoint("TOP", self.frame, "TOP", 0, -80)
-        self.emptyNote:SetText("No current quests with voice lines found.")
+        self.emptyNote:SetText(L("No current quests with voice lines found.", "未找到有语音的当前任务。"))
         pcall(self.emptyNote.SetFont, self.emptyNote, FONT, 10)
     elseif self.emptyNote then
         if empty then
@@ -2499,10 +2708,10 @@ local GOSSIP_ORDER =
 }
 local GOSSIP_NAMES =
 {
-    [Enums.GossipFrequency.Always] = "always",
-    [Enums.GossipFrequency.OncePerQuestNPC] = "oncequest",
-    [Enums.GossipFrequency.OncePerNPC] = "once",
-    [Enums.GossipFrequency.Never] = "never",
+    [Enums.GossipFrequency.Always] = L("always", "总是"),
+    [Enums.GossipFrequency.OncePerQuestNPC] = L("oncequest", "每任务一次"),
+    [Enums.GossipFrequency.OncePerNPC] = L("once", "每NPC一次"),
+    [Enums.GossipFrequency.Never] = L("never", "从不"),
 }
 
 --- Queue the built-in test voice line (quest 5). Returns (ok, fileName).
@@ -2557,7 +2766,7 @@ function QuestLogHook:Attach()
         self.acceptButton:SetScript("OnClick", function()
             local ok, err = pcall(QuestLogHook.PlaySelected, QuestLogHook, "accept")
             if not ok then
-                Print(format("|cffff3333[QuestEcho]|r play error: %s", tostring(err)))
+                Print(format("|cffff3333[QuestEcho]|r %s", format(L("play error: %s", "播放错误：%s"), tostring(err))))
             end
         end)
         AddButtonFeedback(self.acceptButton)
@@ -2631,14 +2840,14 @@ function QuestLogHook:PlaySelected(eventType)
         return self:SelectedQuestID()
     end)
     if not okSel or not questID then
-        Print("|cffff3333[QuestEcho]|r no voice line match for the selected quest: " .. tostring(title or "?"))
+        Print("|cffff3333[QuestEcho]|r " .. format(L("no voice line match for the selected quest: %s", "所选任务没有匹配的语音：%s"), tostring(title or "?")))
         return
     end
     -- Belt and braces: the button should already be disabled without a voice
     -- line, but never let a click reach the play path on this client.
     if not HasQuestVoice(questID, eventType) then
-        Print(format("|cffff3333[QuestEcho]|r no %s voice line file for: |cffffffff%s|r",
-            eventType, tostring(title)))
+        Print(format("|cffff3333[QuestEcho]|r %s", format(L("no %s voice line file for: %s", "没有 %s 语音文件：%s"),
+            eventType, tostring(title))))
         return
     end
     local event = eventType == "complete" and Enums.SoundEvent.QuestComplete or Enums.SoundEvent.QuestAccept
@@ -2651,8 +2860,8 @@ function QuestLogHook:PlaySelected(eventType)
         delay = Addon.db.profile.Delay,
     }
     if not SoundQueue:AddSoundToQueue(soundData) then
-        Print(format("|cffff3333[QuestEcho]|r no %s voice line file for: |cffffffff%s|r",
-            eventType, tostring(title)))
+        Print(format("|cffff3333[QuestEcho]|r %s", format(L("no %s voice line file for: %s", "没有 %s 语音文件：%s"),
+            eventType, tostring(title))))
     end
 end
 
@@ -2890,6 +3099,44 @@ local function PlayTestVoice()
     return ok, ok and soundData.fileName or nil
 end
 
+--- /qe volprobe — plays the same voice line once per volume step (0.5x, 1x,
+--- 2x) so the player can hear whether the VoiceVolume multiplier actually
+--- changes the loudness on this client. Each play uses Utils:PlaySound so it
+--- exercises exactly the code path used by real queue playback.
+local function RunVoiceVolumeProbe()
+    local sd = { event = Enums.SoundEvent.QuestAccept, name = "Jitters", title = "Jitters' Growling Gut", questID = 5, delay = 0 }
+    if not DataModules:PrepareSound(sd) then
+        Print("|cffff3333[QuestEcho]|r " .. L("volprobe failed: no voice line file for quest 5 in the data pack", "音量探测失败：数据包中没有任务 5 的语音文件"))
+        return
+    end
+    local steps = { 0.5, 1, 2 }
+    local old = Addon.db.profile.VoiceVolume or 1
+    Print("|cff33ffcc[QuestEcho]|r " .. L("volprobe: playing at 0.5x, 1x, 2x — you should hear the loudness change", "音量探测：依次播放 0.5 倍、1 倍、2 倍——应当能听到音量变化"))
+    local pf = CreateFrame("Frame")
+    local idx = 1
+    pf:SetScript("OnUpdate", function()
+        if GetTime() < (pf.nextAt or 0) then
+            return
+        end
+        local step = steps[idx]
+        if not step then
+            Addon.db.profile.VoiceVolume = old
+            -- a scaled step may still be mid-play; restore the real game
+            -- volume once it has had time to finish
+            Utils:RestoreSoundSettings()
+            pf:SetScript("OnUpdate", nil)
+            Print("|cff33ffcc[QuestEcho]|r " .. L("volprobe done (volume restored)", "音量探测完成（音量已恢复）"))
+            return
+        end
+        Addon.db.profile.VoiceVolume = step
+        local okPlay = Utils:PlaySound(sd)
+        Print(format("|cff33ffcc[QuestEcho]|r volprobe: %sx -> %s", tostring(step), tostring(okPlay)))
+        idx = idx + 1
+        pf.nextAt = GetTime() + (sd.length or 2) + 1.0
+    end)
+    pf.nextAt = 0
+end
+
 local function MakeTextButton(parent, text, width, onClick)
     local button = CreateFrame("Button", nil, parent)
     button:SetWidth(width)
@@ -2910,12 +3157,41 @@ local function RefreshOptionsUI()
         return
     end
     local profile = Addon.db.profile
-    OptionsUI.delayLabel:SetText(format("Delay before lines: %.1f s", profile.Delay))
-    OptionsUI.statusLabel:SetText(format("Status bar: %s", profile.ShowUI and "shown" or "hidden"))
-    OptionsUI.debugLabel:SetText(format("Debug messages: %s", profile.Debug and "on" or "off"))
+    OptionsUI.delayLabel:SetText(format(L("Delay before lines: %.1f s", "播放前延迟：%.1f 秒"), profile.Delay))
+    OptionsUI.statusLabel:SetText(format(L("Status bar: %s", "状态栏：%s"), profile.ShowUI and L("shown", "显示") or L("hidden", "隐藏")))
+    OptionsUI.debugLabel:SetText(format(L("Debug messages: %s", "调试信息：%s"), profile.Debug and L("on", "开") or L("off", "关")))
+    OptionsUI.voiceLabel:SetText(format(L("Voice volume: %.2f x", "语音音量：%.2f 倍"), profile.VoiceVolume or 1))
     for _, entry in ipairs(GOSSIP_BUTTONS) do
         local active = profile.GossipFrequency == entry.value
         entry.button.label:SetText(active and (format("|cff33ffcc%s|r", entry.name)) or entry.name)
+    end
+end
+
+-- Apply the saved settings window position, or fall back to the centered
+-- default. Called both from Create and again from the timer frame after the
+-- client injects the SavedVariables global, so a saved position is applied
+-- even when Create ran before the global was injected.
+function OptionsUI:ApplySavedPos()
+    local frame = self.frame
+    if not frame then
+        return
+    end
+    local savedPos = Addon.db.profile.OptionsPos
+    if savedPos and type(savedPos[1]) == "number" and type(savedPos[2]) == "number" then
+        local okW, w = pcall(UIParent.GetWidth, UIParent)
+        local okH, h = pcall(UIParent.GetHeight, UIParent)
+        local px, py = savedPos[1], savedPos[2]
+        if okW and w and px + frame:GetWidth() > w then
+            px = w - frame:GetWidth()
+        end
+        if okH and h and py + frame:GetHeight() > h then
+            py = h - frame:GetHeight()
+        end
+        if px < 0 then px = 0 end
+        if py < 0 then py = 0 end
+        pcall(frame.SetPoint, frame, "BOTTOMLEFT", UIParent, "BOTTOMLEFT", px, py)
+    else
+        pcall(frame.SetPoint, frame, "CENTER", UIParent, "CENTER", 0, 120)
     end
 end
 
@@ -2927,7 +3203,8 @@ function OptionsUI:Create()
     local frame = CreateFrame("Frame", "QuestEchoOptionsFrame", UIParent)
     frame:SetWidth(320)
     frame:SetHeight(230)
-    frame:SetPoint("CENTER", UIParent, "CENTER", 0, 120)
+    self.frame = frame
+    self:ApplySavedPos()
     frame:SetClampedToScreen(true)
     frame:EnableMouse(true)
     ApplyClassicBackdrop(frame, 320, 230)
@@ -2969,14 +3246,24 @@ function OptionsUI:Create()
         if ny < 0 then ny = 0 end
         frame:ClearAllPoints()
         frame:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", nx, ny)
+        -- Persist every frame while dragging (OnMouseUp may never fire on this
+        -- client if the cursor leaves the frame before the button is released).
+        Addon.db.profile.OptionsPos = { nx, ny }
+        frame.lastDragX, frame.lastDragY = nx, ny
     end)
     frame:SetScript("OnMouseUp", function()
+        if not frame.dragging then
+            return
+        end
         frame.dragging = false
+        if frame.lastDragX and frame.lastDragY then
+            Addon.db.profile.OptionsPos = { frame.lastDragX, frame.lastDragY }
+        end
     end)
 
     local title = frame:CreateFontString(nil, "OVERLAY", "GameFontWhite")
     title:SetPoint("TOPLEFT", frame, "TOPLEFT", 8, -8)
-    title:SetText("QuestEcho Settings")
+    title:SetText(L("QuestEcho Settings", "QuestEcho 设置"))
     pcall(title.SetFont, title, FONT, 13)
 
     local closeButton = MakeTextButton(frame, "X", 20, function()
@@ -2986,7 +3273,7 @@ function OptionsUI:Create()
 
     local gossipTitle = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     gossipTitle:SetPoint("TOPLEFT", frame, "TOPLEFT", 10, -36)
-    gossipTitle:SetText("Gossip frequency")
+    gossipTitle:SetText(L("Gossip frequency", "闲聊语音频率"))
     pcall(gossipTitle.SetFont, gossipTitle, FONT, 11)
 
     for i, value in ipairs(GOSSIP_ORDER) do
@@ -3019,7 +3306,7 @@ function OptionsUI:Create()
     statusLabel:SetPoint("TOPLEFT", frame, "TOPLEFT", 10, -110)
     pcall(statusLabel.SetFont, statusLabel, FONT, 11)
 
-    local statusButton = MakeTextButton(frame, "toggle", 70, function()
+    local statusButton = MakeTextButton(frame, L("toggle", "切换"), 70, function()
         SoundQueueUI:Toggle()
         RefreshOptionsUI()
     end)
@@ -3029,23 +3316,39 @@ function OptionsUI:Create()
     debugLabel:SetPoint("TOPLEFT", frame, "TOPLEFT", 10, -136)
     pcall(debugLabel.SetFont, debugLabel, FONT, 11)
 
-    local debugButton = MakeTextButton(frame, "toggle", 70, function()
+    local debugButton = MakeTextButton(frame, L("toggle", "切换"), 70, function()
         Addon.db.profile.Debug = not Addon.db.profile.Debug
         RefreshOptionsUI()
     end)
     debugButton:SetPoint("TOPLEFT", frame, "TOPLEFT", 230, -132)
 
-    local testButton = MakeTextButton(frame, "Test voice", 100, function()
+    local voiceLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    voiceLabel:SetPoint("TOPLEFT", frame, "TOPLEFT", 10, -162)
+    pcall(voiceLabel.SetFont, voiceLabel, FONT, 11)
+
+    local voiceMinus = MakeTextButton(frame, "-", 24, function()
+        Addon.db.profile.VoiceVolume = math.max(0.25, math.floor((Addon.db.profile.VoiceVolume - 0.25) / 0.25 + 0.5) * 0.25)
+        RefreshOptionsUI()
+    end)
+    voiceMinus:SetPoint("TOPLEFT", frame, "TOPLEFT", 230, -158)
+
+    local voicePlus = MakeTextButton(frame, "+", 24, function()
+        Addon.db.profile.VoiceVolume = math.min(3, math.floor((Addon.db.profile.VoiceVolume + 0.25) / 0.25 + 0.5) * 0.25)
+        RefreshOptionsUI()
+    end)
+    voicePlus:SetPoint("LEFT", voiceMinus, "RIGHT", 2, 0)
+
+    local testButton = MakeTextButton(frame, L("Test voice", "测试语音"), 100, function()
         PlayTestVoice()
     end)
     testButton:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 10, 8)
 
-    local clearButton = MakeTextButton(frame, "Clear queue", 100, function()
+    local clearButton = MakeTextButton(frame, L("Clear queue", "清空队列"), 100, function()
         SoundQueue:RemoveAllSoundsFromQueue()
     end)
     clearButton:SetPoint("LEFT", testButton, "RIGHT", 6, 0)
 
-    local closeAllButton = MakeTextButton(frame, "Close", 60, function()
+    local closeAllButton = MakeTextButton(frame, L("Close", "关闭"), 60, function()
         OptionsUI:Toggle()
     end)
     closeAllButton:SetPoint("RIGHT", frame, "BOTTOMRIGHT", -10, 8)
@@ -3054,6 +3357,7 @@ function OptionsUI:Create()
     self.delayLabel = delayLabel
     self.statusLabel = statusLabel
     self.debugLabel = debugLabel
+    self.voiceLabel = voiceLabel
     RefreshOptionsUI()
 end
 
@@ -3112,26 +3416,40 @@ end
 -- titles it has already queued, preventing double plays from the poll).
 QuestEcho.QuestAcceptWatcher = {}
 
-local function OnQuestDetail()
+--- Play the accept line for the quest currently shown in the detail window.
+--- @param usePriority boolean  true = cut whatever is playing and start now
+--- (used when the detail window opens), false = normal queue append
+--- (QUEST_DETAIL event path). Returns true only when a line was actually queued,
+--- so callers can mark the title as voiced only on success.
+local function OnQuestDetail(usePriority)
     local name = Utils:GetNPCName()
     local okTitle, title = pcall(GetTitleText)
     local okText, text = pcall(GetQuestText)
     title = okTitle and title or nil
     text = okText and text or nil
     if not title or title == "" then
-        return
+        return false
     end
 
     local questID = DataModules:GetQuestID("accept", title, name, text)
+    -- The detail window may expose the title but not the full body text, so
+    -- fall back to the plain title match used by the log-based watcher.
+    if not questID then
+        questID = FindQuestIDByTitle(title)
+    end
     if not questID then
         Debug:Print("no quest ID match for accept: %s (%s)", tostring(title), tostring(name or "?"))
-        return
+        return false
+    end
+    if not HasQuestVoice(questID, "accept") then
+        Debug:Print("no accept voice for quest %s (%s)", tostring(questID), tostring(title))
+        return false
     end
     if not name then
         name = DataModules:GetQuestGiverName(questID)
     end
 
-    SoundQueue:AddSoundToQueue(
+    local soundData =
     {
         event = Enums.SoundEvent.QuestAccept,
         name = name,
@@ -3139,11 +3457,20 @@ local function OnQuestDetail()
         text = text,
         questID = questID,
         delay = Addon.db.profile.Delay,
-    })
-    local watcher = QuestEcho.QuestAcceptWatcher
-    if watcher and watcher.known then
-        watcher.known[title] = true
+    }
+    local ok
+    if usePriority then
+        ok = SoundQueue:PlayPriorityKeep(soundData)
+    else
+        ok = SoundQueue:AddSoundToQueue(soundData)
     end
+    if ok then
+        local watcher = QuestEcho.QuestAcceptWatcher
+        if watcher and watcher.known then
+            watcher.known[title] = true
+        end
+    end
+    return ok
 end
 
 local function OnQuestComplete()
@@ -3352,6 +3679,11 @@ QuestEcho.QuestCompleteWatcher = {}
 local QuestCompleteWatcher = QuestEcho.QuestCompleteWatcher
 QuestCompleteWatcher.nextCheck = nil
 QuestCompleteWatcher.lastRtLen = nil
+-- The turn-in (reward) window's native panel. GetTitleText on this client
+-- keeps the last quest-giver title after the window closes, so a lingering
+-- title cannot serve as the "window closed" signal — the panel's visibility
+-- is the reliable one (same reason as QuestDetailWatcher).
+QuestCompleteWatcher.REWARD_PANELS = { "QuestRewardScrollChildFrame", "QuestFrameRewardPanel" }
 
 function QuestCompleteWatcher:OnUpdate()
     local okT, t = pcall(GetTime)
@@ -3363,10 +3695,39 @@ function QuestCompleteWatcher:OnUpdate()
     end
     self.nextCheck = t + QUEST_POLL_INTERVAL
 
+    -- Reward window open? At least one panel resolved, and one is shown.
+    local rewardShown = false
+    local panelResolved = false
+    for _, name in ipairs(QuestCompleteWatcher.REWARD_PANELS) do
+        local ok, panel = pcall(getglobal, name)
+        if ok and panel and type(panel.IsShown) == "function" then
+            panelResolved = true
+            local okShown, shown = pcall(panel.IsShown, panel)
+            if okShown and shown then
+                rewardShown = true
+                break
+            end
+        end
+    end
+
     local okTitle, title = pcall(GetTitleText)
     local hasTitle = okTitle and title and title ~= ""
     local okRT, rewardText = pcall(GetRewardText)
     local rtlen = (okRT and rewardText and #rewardText) or 0
+
+    -- Panels resolved: the reward window is open only while one is shown.
+    -- When it closes, clear lastRtLen so the next turn-in (even of the same
+    -- quest) re-arms the detector.
+    if panelResolved then
+        if not rewardShown then
+            self.lastRtLen = nil
+            return
+        end
+    elseif not hasTitle then
+        -- No panel API: fall back to the title going empty as "closed".
+        self.lastRtLen = nil
+        return
+    end
 
     -- The reward (turn-in) window just opened: reward text appeared/changed
     -- while a quest title is showing. This is the only complete trigger —
@@ -3392,6 +3753,114 @@ function QuestCompleteWatcher:OnUpdate()
     end
 end
 
+-- =============================================================================
+-- Quest-detail watcher: play the accept voice as soon as the quest detail
+-- (accept) window opens, instead of waiting for the quest to enter the log.
+-- QUEST_DETAIL never fires on this client (OnEvent's event arg is always nil),
+-- so poll the detail window itself.
+--
+-- Window detection: GetTitleText on this client is documented as the title
+-- "last received from a quest-giver packet (detail, progress, or complete)"
+-- and it does NOT clear when the detail window closes — so a non-empty title
+-- cannot mean "the window is open". Re-using the title as a debounce would
+-- permanently block re-voicing the same quest on a second open. Instead we
+-- test the native detail panel's visibility (QuestDetailScrollChildFrame):
+-- shown = the accept window is up, hidden = it is closed (or the reward
+-- window took over). Only while shown do we read the title, and only a
+-- title NOT in the quest log yet is an acceptable quest (a title already in
+-- the log means the turn-in window is open, which QuestCompleteWatcher
+-- owns). No session-level de-dupe: every time the accept window opens the
+-- accept line plays again. OnQuestDetail marks the quest as known on
+-- success, so the log-based watcher will not double-play after the quest is
+-- accepted.
+-- =============================================================================
+QuestEcho.QuestDetailWatcher = {}
+local QuestDetailWatcher = QuestEcho.QuestDetailWatcher
+QuestDetailWatcher.nextCheck = nil
+QuestDetailWatcher.lastTitle = nil
+-- The panel name is Vanilla 1.12 FrameXML (QuestDetailScrollChildFrame is
+-- inside the accept/detail panel). On a client where it is absent the watcher
+-- degrades to the previous title-based behavior.
+QuestDetailWatcher.DETAIL_PANELS = { "QuestDetailScrollChildFrame", "QuestFrameDetailPanel" }
+
+-- "shown"  = an accept/detail panel is visible (the accept window is up)
+-- "hidden" = at least one panel resolved but none is visible (window closed)
+-- "unavailable" = no panel could be resolved at all (fall back to titles)
+local function DetailPanelState()
+    local resolved = false
+    for _, name in ipairs(QuestDetailWatcher.DETAIL_PANELS) do
+        local ok, panel = pcall(getglobal, name)
+        if ok and panel and type(panel.IsShown) == "function" then
+            resolved = true
+            local okShown, shown = pcall(panel.IsShown, panel)
+            if okShown and shown then
+                return "shown"
+            end
+        end
+    end
+    if resolved then
+        return "hidden"
+    end
+    return "unavailable"
+end
+
+function QuestDetailWatcher:OnUpdate()
+    local okT, t = pcall(GetTime)
+    if not okT or not t then
+        return
+    end
+    if self.nextCheck and t < self.nextCheck then
+        return
+    end
+    self.nextCheck = t + QUEST_POLL_INTERVAL
+
+    local state = DetailPanelState()
+    if state == "shown" then
+        -- Accept window is up: read the title and voice it once per open
+        -- (the lastTitle debounce only suppresses repeats while the SAME
+        -- window stays open; closing the window clears it below).
+        local okTitle, title = pcall(GetTitleText)
+        local hasTitle = okTitle and title and title ~= ""
+        if not hasTitle then
+            -- panel shown but title not yet populated: keep waiting
+            return
+        end
+        if self.lastTitle == title then
+            return
+        end
+        self.lastTitle = title
+        -- A title already in the quest log is the turn-in window, owned by
+        -- QuestCompleteWatcher — not an acceptable quest.
+        if CurrentQuestTitles()[title] then
+            return
+        end
+        OnQuestDetail(true)
+        return
+    elseif state == "hidden" then
+        -- Window closed (or the reward window swapped the panel in): clear
+        -- the debounce so the same quest voices again on the next open.
+        self.lastTitle = nil
+        return
+    end
+
+    -- "unavailable": no native panel to test, so fall back to the old rule
+    -- (title going empty = window closed, non-empty = open).
+    local okTitle, title = pcall(GetTitleText)
+    local hasTitle = okTitle and title and title ~= ""
+    if not hasTitle then
+        self.lastTitle = nil
+        return
+    end
+    if self.lastTitle == title then
+        return
+    end
+    self.lastTitle = title
+    if CurrentQuestTitles()[title] then
+        return
+    end
+    OnQuestDetail(true)
+end
+
 function QuestAcceptWatcher:OnUpdate()
     local okT, t = pcall(GetTime)
     if not okT or not t then
@@ -3410,6 +3879,10 @@ function QuestAcceptWatcher:OnUpdate()
     end
     for title in pairs(current) do
         if not known[title] then
+            -- OnQuestDetail marks the quest known on success, so accepting
+            -- after the detail window already voiced it won't double-play.
+            -- Only fall back here when the detail match failed (no voice
+            -- found while the window was open).
             local questID = FindQuestIDByTitle(title)
             if questID and HasQuestVoice(questID, "accept") then
                 SoundQueue:AddSoundToQueue(
@@ -3468,9 +3941,26 @@ pcall(Welcome)
 -- timer driver
 local timerFrame = CreateFrame("Frame")
 timerFrame:SetScript("OnUpdate", function()
+    -- SavedVariables binding: on this client ADDON_LOADED has no probed
+    -- record and the QuestEchoDB global may be injected AFTER our file-level
+    -- init, so Addon.db would keep pointing at the table we built ourselves
+    -- while the client serializes the (freshly injected) global on exit —
+    -- every runtime write would be lost. Detect a client-injected global and
+    -- merge it in once, then keep the global bound to our live table every
+    -- frame so exit-save writes the table we actually use.
+    if type(QuestEchoDB) == "table" and QuestEchoDB ~= Addon.db then
+        Addon.db = Addon:MergeDB(QuestEchoDB, defaults)
+        -- The status bar and settings frames may have been created before the
+        -- client injected the SavedVariables global, so re-apply any saved
+        -- positions now that Addon.db actually contains them.
+        SoundQueueUI:ApplySavedPos()
+        OptionsUI:ApplySavedPos()
+    end
+    QuestEchoDB = Addon.db
     Utils:MaybeCaptureBaseline()
     SoundQueue:OnUpdate()
     GossipWatcher:OnUpdate()
+    QuestDetailWatcher:OnUpdate()
     QuestAcceptWatcher:OnUpdate()
     QuestCompleteWatcher:OnUpdate()
 end)
@@ -3480,30 +3970,33 @@ end)
 -- =============================================================================
 local GOSSIP_NAMES =
 {
-    [Enums.GossipFrequency.Always] = "always",
-    [Enums.GossipFrequency.OncePerQuestNPC] = "oncequest",
-    [Enums.GossipFrequency.OncePerNPC] = "once",
-    [Enums.GossipFrequency.Never] = "never",
+    [Enums.GossipFrequency.Always] = L("always", "总是"),
+    [Enums.GossipFrequency.OncePerQuestNPC] = L("oncequest", "每任务一次"),
+    [Enums.GossipFrequency.OncePerNPC] = L("once", "每NPC一次"),
+    [Enums.GossipFrequency.Never] = L("never", "从不"),
 }
 
 local function Help()
-    Print("|cff33ffccQuestEcho (Emberveil)|r 1.5.1 — voice lines for quests and gossip")
-    Print("|cff33ffcc/qe|r — this help")
-    Print("|cff33ffcc/qe pause|r — pause/resume the voice line queue")
-    Print("|cff33ffcc/qe clear|r — clear the queue and stop the current line")
-    Print("|cff33ffcc/qe gossip|r — show gossip frequency")
-    Print("|cff33ffcc/qe gossip always|r / |cff33ffcconce|r / |cff33ffcconcequest|r / |cff33ffccnever|r — set gossip frequency")
-    Print("|cff33ffcc/qe delay <sec>|r — delay before a voice line starts (default 0.3)")
-    Print("|cff33ffcc/qe stopwait full|<sec>|r — how long to keep volume muted after removing a line (default 0.5)")
-    Print("|cff33ffcc/qe ui|r — toggle the status bar")
-    Print("|cff33ffcc/qe debug|r — toggle debug messages")
-    Print("|cff33ffcc/qe questlog|r — open the quest replay window")
-    Print("|cff33ffcc/qe settings|r — open the settings panel")
-    Print("|cff33ffcc/qe test|r — play a test voice line")
-    Print("|cff33ffcc/qe status|r — show queue state")
-    Print("|cff33ffcc/qe diag|r — dump sound cvar/baseline/api diagnostics")
-    Print("|cff33ffcc/qe probe|r — dump runtime quest-log/sound diagnostics")
-    Print("|cff33ffcc/qe soundprobe|r — play one file via 5 path variants (which do you hear?)")
+    Print("|cff33ffccQuestEcho (Emberveil)|r 1.5.3 — " .. L("voice lines for quests and gossip", "任务与闲聊语音"))
+    Print("|cff33ffcc/qe|r — " .. L("this help", "本帮助"))
+    Print("|cff33ffcc/qe pause|r — " .. L("pause/resume the voice line queue", "暂停/恢复语音队列"))
+    Print("|cff33ffcc/qe clear|r — " .. L("clear the queue and stop the current line", "清空队列并停止当前语音"))
+    Print("|cff33ffcc/qe gossip|r — " .. L("show gossip frequency", "查看闲聊语音频率"))
+    Print("|cff33ffcc/qe gossip always|r / |cff33ffcconce|r / |cff33ffcconcequest|r / |cff33ffccnever|r — " .. L("set gossip frequency", "设置闲聊语音频率"))
+    Print("|cff33ffcc/qe delay <sec>|r — " .. L("delay before a voice line starts (default 0.3)", "语音播放前延迟（默认 0.3 秒）"))
+    Print("|cff33ffcc/qe vol [0.25-3]|r — " .. L("QuestEcho voice volume multiplier (default 1.0, independent of game sound)", "QuestEcho 语音音量倍率（默认 1.0，独立于游戏音量）"))
+    Print("|cff33ffcc/qe volprobe|r — " .. L("play one line at several volumes so you can confirm the multiplier works", "用不同音量播放同一句语音，用于确认倍率生效"))
+    Print("|cff33ffcc/qe stopwait full|<sec>|r — " .. L("how long to keep volume muted after removing a line (default 0.5)", "移除语音后保持音量静音的时长（默认 0.5 秒）"))
+    Print("|cff33ffcc/qe ui|r — " .. L("toggle the status bar", "开关状态栏"))
+    Print("|cff33ffcc/qe debug|r — " .. L("toggle debug messages", "开关调试信息"))
+    Print("|cff33ffcc/qe questlog|r — " .. L("open the quest replay window", "打开任务语音回放窗口"))
+    Print("|cff33ffcc/qe settings|r — " .. L("open the settings panel", "打开设置面板"))
+    Print("|cff33ffcc/qe test|r — " .. L("play a test voice line", "播放测试语音"))
+    Print("|cff33ffcc/qe status|r — " .. L("show queue state", "显示队列状态"))
+    Print("|cff33ffcc/qe locale|r — " .. L("show client locale and data module state", "显示客户端语言和数据模块状态"))
+    Print("|cff33ffcc/qe diag|r — " .. L("dump sound cvar/baseline/api diagnostics", "输出音频设置/基准/接口诊断"))
+    Print("|cff33ffcc/qe probe|r — " .. L("dump runtime quest-log/sound diagnostics", "输出任务日志/音频运行时诊断"))
+    Print("|cff33ffcc/qe soundprobe|r — " .. L("play one file via 5 path variants (which do you hear?)", "用 5 种路径变体播放同一文件（你听到哪个？）"))
 end
 
 local function HandleSlashCommand(input)
@@ -3515,38 +4008,49 @@ local function HandleSlashCommand(input)
         Help()
     elseif command == "pause" or command == "p" then
         SoundQueue:TogglePauseQueue()
-        Print(format("|cff33ffcc[QuestEcho]|r %s", Addon.db.char.IsPaused and "paused" or "resumed"))
+        Print(format("|cff33ffcc[QuestEcho]|r %s", Addon.db.char.IsPaused and L("paused", "已暂停") or L("resumed", "已恢复")))
     elseif command == "clear" or command == "c" then
         SoundQueue:RemoveAllSoundsFromQueue()
-        Print("|cff33ffcc[QuestEcho]|r queue cleared")
+        Print(format("|cff33ffcc[QuestEcho]|r %s", L("queue cleared", "队列已清空")))
     elseif command == "gossip" or command == "g" then
         if arg == "" then
-            Print(format("|cff33ffcc[QuestEcho]|r gossip frequency: |cffffffff%s|r",
+            Print(format("|cff33ffcc[QuestEcho]|r %s: |cffffffff%s|r",
+                L("gossip frequency", "闲聊语音频率"),
                 GOSSIP_NAMES[Addon.db.profile.GossipFrequency] or "?"))
         elseif arg == "always" then
             Addon.db.profile.GossipFrequency = Enums.GossipFrequency.Always
-            Print("|cff33ffcc[QuestEcho]|r gossip: always")
+            Print(format("|cff33ffcc[QuestEcho]|r gossip: %s", L("always", "总是")))
         elseif arg == "once" then
             Addon.db.profile.GossipFrequency = Enums.GossipFrequency.OncePerNPC
-            Print("|cff33ffcc[QuestEcho]|r gossip: once per NPC (per character)")
+            Print(format("|cff33ffcc[QuestEcho]|r gossip: %s", L("once per NPC (per character)", "每 NPC 一次（每角色）")))
         elseif arg == "oncequest" or arg == "onceperquest" then
             Addon.db.profile.GossipFrequency = Enums.GossipFrequency.OncePerQuestNPC
-            Print("|cff33ffcc[QuestEcho]|r gossip: once per quest NPC (per session)")
+            Print(format("|cff33ffcc[QuestEcho]|r gossip: %s", L("once per quest NPC (per session)", "每任务 NPC 一次（每会话）")))
         elseif arg == "never" then
             Addon.db.profile.GossipFrequency = Enums.GossipFrequency.Never
-            Print("|cff33ffcc[QuestEcho]|r gossip: never")
+            Print(format("|cff33ffcc[QuestEcho]|r gossip: %s", L("never", "从不")))
         else
-            Print("|cffff3333[QuestEcho]|r unknown gossip setting: " .. tostring(arg))
+            Print("|cffff3333[QuestEcho]|r " .. format(L("unknown gossip setting: %s", "未知的闲聊设置：%s"), tostring(arg)))
         end
     elseif command == "delay" then
         local delay = tonumber(arg)
         if delay and delay >= 0 and delay <= 10 then
             Addon.db.profile.Delay = delay
-            Print(format("|cff33ffcc[QuestEcho]|r delay set to %.1fs", delay))
+            Print(format("|cff33ffcc[QuestEcho]|r %s", format(L("delay set to %.1fs", "延迟已设为 %.1f 秒"), delay)))
         else
-            Print(format("|cff33ffcc[QuestEcho]|r current delay: %.1fs", Addon.db.profile.Delay))
+            Print(format("|cff33ffcc[QuestEcho]|r %s", format(L("current delay: %.1fs", "当前延迟：%.1f 秒"), Addon.db.profile.Delay)))
         end
-    elseif command == "ui" then
+    elseif command == "vol" then
+        local v = tonumber(arg)
+        if v and v >= 0.25 and v <= 3 then
+            Addon.db.profile.VoiceVolume = v
+            Print(format("|cff33ffcc[QuestEcho]|r %s", format(L("voice volume set to %.2f x", "语音音量已设为 %.2f 倍"), v)))
+        else
+            Print(format("|cff33ffcc[QuestEcho]|r %s: |cffffffff%.2f x|r", L("current voice volume", "当前语音音量"), Addon.db.profile.VoiceVolume or 1))
+            Print("|cffff3333[QuestEcho]|r usage: /qe vol 0.25-3")
+        end
+    elseif command == "volprobe" then
+        RunVoiceVolumeProbe()
         SoundQueueUI:Toggle()
     elseif command == "probe" then
         ProbeRuntime()
@@ -3558,33 +4062,41 @@ local function HandleSlashCommand(input)
         OptionsUI:Toggle()
     elseif command == "stopwait" then
         if arg == "" then
-            Print(format("|cff33ffcc[QuestEcho]|r stop restore wait: |cffffffff%s|r (full = wait for the removed line to end)", tostring(Addon.db.profile.StopWait)))
+            Print(format("|cff33ffcc[QuestEcho]|r %s: |cffffffff%s|r (%s)", 
+                L("stop restore wait", "停止后音量恢复等待"),
+                tostring(Addon.db.profile.StopWait),
+                L("full = wait for the removed line to end", "full = 等待被移除的语音播完")))
         elseif arg == "full" then
             Addon.db.profile.StopWait = "full"
-            Print("|cff33ffcc[QuestEcho]|r stop restore wait: full (wait for the removed line to end)")
+            Print(format("|cff33ffcc[QuestEcho]|r %s: full (%s)",
+                L("stop restore wait", "停止后音量恢复等待"),
+                L("wait for the removed line to end", "等待被移除的语音播完")))
         else
             local wait = tonumber(arg)
             if wait and wait >= 0 and wait <= 30 then
                 Addon.db.profile.StopWait = wait
-                Print(format("|cff33ffcc[QuestEcho]|r stop restore wait: %.1fs (the removed line's tail may keep playing)", wait))
+                Print(format("|cff33ffcc[QuestEcho]|r %s: %.1fs (%s)",
+                    L("stop restore wait", "停止后音量恢复等待"),
+                    wait,
+                    L("the removed line's tail may keep playing", "被移除语音的尾部可能继续播放")))
             else
                 Print("|cffff3333[QuestEcho]|r usage: /qe stopwait full | <seconds 0-30>")
             end
         end
     elseif command == "debug" then
         Addon.db.profile.Debug = not Addon.db.profile.Debug
-        Print(format("|cff33ffcc[QuestEcho]|r debug %s", Addon.db.profile.Debug and "on" or "off"))
+        Print(format("|cff33ffcc[QuestEcho]|r debug %s", Addon.db.profile.Debug and L("on", "开") or L("off", "关")))
     elseif command == "test" then
         if not DataModules:GetModule("QuestEchoData") then
-            Print("|cffff3333[QuestEcho]|r test failed: data module not loaded — type |cff33ffcc/qe status|r")
+            Print("|cffff3333[QuestEcho]|r " .. L("test failed: data module not loaded — type /qe status", "测试失败：数据模块未加载 — 输入 /qe status"))
         elseif not Utils:IsSoundEnabled() then
-            Print("|cffff3333[QuestEcho]|r test failed: sound is disabled in the game options")
+            Print("|cffff3333[QuestEcho]|r " .. L("test failed: sound is disabled in the game options", "测试失败：游戏设置中声音已关闭"))
         else
             local ok, fileName = PlayTestVoice()
             if ok then
-                Print(format("|cff33ffcc[QuestEcho]|r test voice line queued (%s)", tostring(fileName)))
+                Print(format("|cff33ffcc[QuestEcho]|r %s (%s)", L("test voice line queued", "测试语音已加入队列"), tostring(fileName)))
             else
-                Print("|cffff3333[QuestEcho]|r test failed: no voice line file for quest 5 in the data pack")
+                Print("|cffff3333[QuestEcho]|r " .. L("test failed: no voice line file for quest 5 in the data pack", "测试失败：数据包中没有任务 5 的语音文件"))
             end
         end
     elseif command == "diag" then
@@ -3722,6 +4234,13 @@ local function HandleSlashCommand(input)
                         Print(format("  5) PrepareSound -> %s / %s / %.2fs", tostring(sd.fileName), tostring(sd.filePath), sd.length or 0))
                         local okPlay = Utils:PlaySound(sd)
                         Print(format("  6) PlaySoundFile -> %s", tostring(okPlay)))
+                        -- the file plays out of band (possibly volume-scaled);
+                        -- bring the game volume back once it has finished
+                        if okPlay and sd.length then
+                            afterDelay(sd.length + 1.0, function()
+                                Utils:RestoreSoundSettings()
+                            end)
+                        end
                     else
                         Print("  5) PrepareSound -> false (no voice line)")
                     end
@@ -3741,8 +4260,31 @@ local function HandleSlashCommand(input)
         local soundAll, soundSfx = Utils:GetSoundCvarInfo()
         Print(format("|cff33ffcc[QuestEcho]|r sound: |cffffffff%s|r (Sound_EnableAllSound=%s, Sound_EnableSFX=%s)",
             Utils:IsSoundEnabled() and "enabled" or "disabled", soundAll, soundSfx))
+    elseif command == "locale" then
+        local ok, locale = pcall(GetLocale)
+        Print(format("|cff33ffcc[QuestEcho]|r GetLocale() -> ok=%s value=|cffffffff%s|r", tostring(ok), tostring(locale)))
+        DataModules:EnumerateAddons()
+        local present = {}
+        for _, m in ipairs(DataModules.presentModulesOrdered) do
+            table.insert(present, tostring(m.AddonName) .. " (prio " .. tostring(m.ModulePriority) .. ")")
+        end
+        Print(format("|cff33ffcc[QuestEcho]|r present modules: |cffffffff%s|r", #present > 0 and table.concat(present, ", ") or "none"))
+        local registered = {}
+        for name in pairs(DataModules.registeredModules) do
+            table.insert(registered, tostring(name))
+        end
+        Print(format("|cff33ffcc[QuestEcho]|r registered modules: |cffffffff%s|r", #registered > 0 and table.concat(registered, ", ") or "none"))
+        if QuestEchoData then
+            Print(format("|cff33ffcc[QuestEcho]|r QuestEchoData table: |cffffffff%s|r (NPCNameLookupByNPCID=%s, GossipLookupByNPCName=%s, QuestIDLookup=%s)",
+                tostring(type(QuestEchoData)),
+                tostring(type(QuestEchoData.NPCNameLookupByNPCID)),
+                tostring(type(QuestEchoData.GossipLookupByNPCName)),
+                tostring(type(QuestEchoData.QuestIDLookup))))
+        else
+            Print("|cff33ffcc[QuestEcho]|r QuestEchoData table: |cffffffffnil|r")
+        end
     else
-        Print("|cffff3333[QuestEcho]|r unknown command: " .. tostring(command) .. " — type |cff33ffcc/qe|r for help")
+        Print("|cffff3333[QuestEcho]|r " .. format(L("unknown command: %s — type /qe for help", "未知命令：%s — 输入 /qe 查看帮助"), tostring(command)))
     end
 end
 
@@ -3754,6 +4296,32 @@ SlashCmdList["QUESTECHO"] = HandleSlashCommand
 -- =============================================================================
 -- Enumerate present data modules before anything can register against us.
 pcall(DataModules.EnumerateAddons, DataModules)
+
+-- Actively load the data pack matching the client locale. The data packs are
+-- LoadOnDemand: without this call their Module.lua never runs (the old
+-- VoiceOver addon loaded its data pack the same way). zhCN clients get the
+-- QuestEchoData-zhCN pack, everyone else the QuestEchoData / bundled data.
+local function LoadLocaleDataPack()
+    local ok, locale = pcall(GetLocale)
+    local addonName = (ok and locale == "zhCN") and "QuestEchoData-zhCN" or "QuestEchoData"
+    local loaded, reason = pcall(LoadAddOn, addonName)
+    if not loaded then
+        -- Some clients expose the loader under a different name.
+        local ok2, loaded2, reason2 = pcall(C_AddOns and C_AddOns.LoadAddOn, addonName)
+        if not (ok2 and loaded2) then
+            -- Fall back to requesting by metadata-flagged addons.
+            for _, m in ipairs(DataModules.presentModulesOrdered) do
+                if m.AddonName == addonName then
+                    pcall(LoadAddOn, m.AddonName)
+                    break
+                end
+            end
+        end
+    end
+    -- Re-enumerate so the newly loaded pack appears in presentModules.
+    pcall(DataModules.EnumerateAddons, DataModules)
+end
+pcall(LoadLocaleDataPack)
 
 -- Register events (missing events are skipped safely).
 RegisterEvent("ADDON_LOADED")

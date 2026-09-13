@@ -1,5 +1,5 @@
 if not QuestEcho or not QuestEcho.DataModules then return end
-if GetLocale() == "zhCN" then return end
+if GetLocale() ~= "zhCN" then return end
 QuestEchoData.NPCIDLookupByQuestID = {
 	[5] = 288,
 	[6] = 823,
