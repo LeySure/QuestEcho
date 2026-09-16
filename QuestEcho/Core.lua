@@ -1888,6 +1888,7 @@ function SoundQueue:ResumeQueue()
     -- This client cannot resume mid-file; restart the current line.
     if self.current then
         Utils:PlaySound(self.current)
+        self.current.startedAt = GetTime()
         self.nextSoundAt = GetTime() + (self.current.delay or 0) + (self.current.length or 0) + 0.5 + (self.current._deferred or 0)
     end
     SoundQueueUI:Update()
@@ -1976,80 +1977,317 @@ local function EdgeTexture(frame, x1, y1, x2, y2, color)
     return tex
 end
 
---- Opaque panel backdrop for a fixed-size frame (settings panel).
-local function ApplyClassicBackdrop(frame, width, height)
-    local fill = frame:CreateTexture(nil, "BACKGROUND")
-    fill:SetTexture(PANEL_BG[1], PANEL_BG[2], PANEL_BG[3], PANEL_BG[4])
-    fill:SetAllPoints()
-    EdgeTexture(frame, 0, 0, width, 2, PANEL_BORDER)
-    EdgeTexture(frame, 0, height - 2, width, height, PANEL_BORDER)
-    EdgeTexture(frame, 0, 0, 2, height, PANEL_BORDER)
-    EdgeTexture(frame, width - 2, 0, width, height, PANEL_BORDER)
+-- Vanilla WoW palette: near-black panels, bright-gold trim, blue-grey
+-- UIPanelButton gradient face, yellow titles with black shadow. Every look
+-- is drawn from solid-color textures because this client's pak has no
+-- WoW-style Interface texture files. Values sampled from the client's own
+-- quest-log chrome: enabled buttons are red with gold labels (like the
+-- native Exit button), disabled buttons are grey (like Share Quest).
+local UI_GOLD_BRIGHT  = { 0.863, 0.667, 0.361 }  -- hover gold, 220,170,92
+local UI_GOLD_DARK    = { 0.420, 0.353, 0.180 }
+local UI_GOLD_TEXT    = { 0.957, 0.745, 0.427 }  -- titles/icons, 244,190,109
+local UI_FRAME_BORDER = { 0.780, 0.780, 0.780 }  -- window frame trim, silver
+local UI_RED_TOP      = { 0.380, 0.031, 0.031 }  -- native Exit face
+local UI_RED_MID      = { 0.353, 0.024, 0.024 }
+local UI_RED_DARK     = { 0.298, 0.016, 0.016 }
+local UI_RED_BOTTOM   = { 0.341, 0.024, 0.024 }
+local UI_RED_BORDER   = { 0.184, 0.161, 0.149 }  -- dark red-black trim
+local UI_RED_HILIGHT  = { 0.337, 0.337, 0.337 }  -- inner top highlight
+local UI_GREY_TOP     = { 0.192, 0.192, 0.184 }  -- disabled Share Quest face
+local UI_GREY_MID     = { 0.161, 0.161, 0.161 }
+local UI_GREY_DARK    = { 0.133, 0.133, 0.133 }
+local UI_GREY_BOTTOM  = { 0.180, 0.180, 0.180 }
+local UI_GREY_BORDER  = { 0.184, 0.188, 0.169 }
+local UI_GREY_HILIGHT = { 0.337, 0.337, 0.337 }
+local UI_GREEN_TOP    = { 0.310, 0.878, 0.310 }
+local UI_GREEN_MID    = { 0.220, 0.690, 0.220 }
+local UI_GREEN_DARK   = { 0.160, 0.520, 0.160 }
+local UI_GREEN_BOTTOM = { 0.059, 0.541, 0.059 }
+local UI_PANEL_TOP    = { 0.051, 0.051, 0.059 }
+local UI_PANEL_BOTTOM = { 0.020, 0.020, 0.020 }
+
+--- Fill a frame with horizontal gradient bands (approximated with stacked
+--- solid-color textures). stops: {{frac, r,g,b}, ...} top-to-bottom, the
+--- fracs must sum to 1. Textures are collected on parent._gradTex so a
+--- caller can re-tint the gradient later (SetButtonStyle).
+local function GradientFill(parent, w, h, layer, stops)
+    local acc = 0
+    for _, stop in ipairs(stops) do
+        local tex = parent:CreateTexture(nil, layer)
+        tex:SetTexture(stop[2], stop[3], stop[4], 1)
+        -- Anchor the band between two opposite corners of the parent:
+        -- TOPLEFT at the parent's left edge and BOTTOMRIGHT at the parent's
+        -- right edge (x = w), so the band spans the full parent width.
+        tex:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, -acc * h)
+        tex:SetPoint("BOTTOMRIGHT", parent, "TOPLEFT", w, -(acc + stop[1]) * h)
+        acc = acc + stop[1]
+        if parent._gradTex then
+            table.insert(parent._gradTex, tex)
+        end
+    end
 end
 
---- Opaque panel backdrop whose border follows a resizing frame (status bar).
+local function ButtonPalette(style)
+    if style == "red" then
+        return UI_RED_TOP, UI_RED_MID, UI_RED_DARK, UI_RED_BOTTOM, UI_RED_BORDER, UI_RED_HILIGHT
+    elseif style == "grey" then
+        return UI_GREY_TOP, UI_GREY_MID, UI_GREY_DARK, UI_GREY_BOTTOM, UI_GREY_BORDER, UI_GREY_HILIGHT
+    elseif style == "green" then
+        return UI_GREEN_TOP, UI_GREEN_MID, UI_GREEN_DARK, UI_GREEN_BOTTOM, UI_GREY_BORDER, UI_GREEN_TOP
+    elseif style == "gold" then
+        -- selected state: red face with the bright gold trim + grey hilight
+        return UI_RED_TOP, UI_RED_MID, UI_RED_DARK, UI_RED_BOTTOM, UI_GOLD_BRIGHT, UI_RED_HILIGHT
+    end
+    -- Default: enabled native buttons are red with gold labels (Exit style).
+    return UI_RED_TOP, UI_RED_MID, UI_RED_DARK, UI_RED_BOTTOM, UI_RED_BORDER, UI_RED_HILIGHT
+end
+
+--- WoW UIPanelButton look: red/grey gradient face, dark outer trim with a
+--- bright inner bevel (1px) and a 2px top highlight, like native buttons.
+local function MakeWowButtonBackdrop(button, w, h, style)
+    button._gradTex = {}
+    local top, mid, dark, bottom, border, hilight = ButtonPalette(style)
+    GradientFill(button, w, h, "BACKGROUND", {
+        { 0.50, top[1], top[2], top[3] },
+        { 0.15, mid[1], mid[2], mid[3] },
+        { 0.15, dark[1], dark[2], dark[3] },
+        { 0.20, bottom[1], bottom[2], bottom[3] },
+    })
+    button._gradColors = { top, mid, dark, bottom }
+    button._gradBorder = border
+    local b1 = EdgeTexture(button, 0, 0, w, 1, border)
+    EdgeTexture(button, 0, h - 1, w, h, border)
+    EdgeTexture(button, 0, 0, 1, h, border)
+    EdgeTexture(button, w - 1, 0, w, h, border)
+    button._gradBorderTex = b1
+    -- native buttons keep the dark trim with a bright top band only (no
+    -- silver rim around the whole button)
+    EdgeTexture(button, 1, 1, w - 1, 3, hilight)
+    -- chamfered corners: 2px dark notches, like the native UIPanelButton
+    -- corner bevel (this client can only draw solid rectangles)
+    local notch = { 0.02, 0.02, 0.02 }
+    EdgeTexture(button, 0, 0, 2, 2, notch)
+    EdgeTexture(button, w - 2, 0, w, 2, notch)
+    EdgeTexture(button, 0, h - 2, 2, h, notch)
+    EdgeTexture(button, w - 2, h - 2, w, h, notch)
+    return button
+end
+
+--- Re-tint an existing UIPanelButton (settings panel uses this to show the
+--- active gossip-frequency choice in green).
+local function SetButtonStyle(button, style)
+    local top, mid, dark, bottom, border = ButtonPalette(style)
+    local texes = button._gradTex
+    if texes then
+        local targets = { top, mid, dark, bottom }
+        for i, tex in ipairs(texes) do
+            local t = targets[i] or bottom
+            pcall(tex.SetTexture, tex, t[1], t[2], t[3], 1)
+        end
+    end
+    if button._gradBorderTex then
+        pcall(button._gradBorderTex.SetTexture, button._gradBorderTex, border[1], border[2], border[3], 1)
+    end
+    button._gradColors = { top, mid, dark, bottom }
+    button._gradBorder = border
+end
+
+--- Opaque WoW-style panel backdrop for a fixed-size frame (settings panel):
+--- near-black gradient fill, bright-gold outer trim, inner gold line and
+--- corner studs.
+local function ApplyClassicBackdrop(frame, width, height)
+    GradientFill(frame, width, height, "BACKGROUND", {
+        { 0.55, UI_PANEL_TOP[1], UI_PANEL_TOP[2], UI_PANEL_TOP[3] },
+        { 0.45, UI_PANEL_BOTTOM[1], UI_PANEL_BOTTOM[2], UI_PANEL_BOTTOM[3] },
+    })
+    EdgeTexture(frame, 0, 0, width, 1, UI_FRAME_BORDER)
+    EdgeTexture(frame, 0, height - 1, width, height, UI_FRAME_BORDER)
+    EdgeTexture(frame, 0, 0, 1, height, UI_FRAME_BORDER)
+    EdgeTexture(frame, width - 1, 0, width, height, UI_FRAME_BORDER)
+    -- dark slot between the outer gold and the inner gold line
+    EdgeTexture(frame, 1, 1, width - 1, 2, UI_PANEL_BOTTOM)
+    EdgeTexture(frame, 1, height - 2, width - 1, height - 1, UI_PANEL_BOTTOM)
+    EdgeTexture(frame, 1, 1, 2, height - 1, UI_PANEL_BOTTOM)
+    EdgeTexture(frame, width - 2, 1, width - 1, height - 1, UI_PANEL_BOTTOM)
+    EdgeTexture(frame, 2, 2, width - 2, 3, UI_GOLD_DARK)
+    EdgeTexture(frame, 2, height - 3, width - 2, height - 2, UI_GOLD_DARK)
+    EdgeTexture(frame, 2, 2, 3, height - 2, UI_GOLD_DARK)
+    EdgeTexture(frame, width - 3, 2, width - 2, height - 2, UI_GOLD_DARK)
+    -- corner studs removed: user wants the plain native look (outer gold
+    -- border only, no corner ornaments)
+end
+
+--- WoW-style panel backdrop whose border follows a resizing frame (status
+--- bar): near-black fill with a slightly lighter 24px top band, bright-gold
+--- outer trim. NOTE: this client renders 1px lines badly when they are
+--- anchored with two points (TOPLEFT+BOTTOMRIGHT/TOPRIGHT) — they get
+--- stretched into big solid patches — so the border lines are single-point
+--- anchored and their size is refreshed on frame resize via OnUpdate.
 local function ApplyClassicBackdropResizable(frame)
     local fill = frame:CreateTexture(nil, "BACKGROUND")
-    fill:SetTexture(PANEL_BG[1], PANEL_BG[2], PANEL_BG[3], PANEL_BG[4])
+    fill:SetTexture(UI_PANEL_BOTTOM[1], UI_PANEL_BOTTOM[2], UI_PANEL_BOTTOM[3], 1)
     fill:SetAllPoints()
-    local top = frame:CreateTexture(nil, "BORDER")
-    top:SetTexture(PANEL_BORDER[1], PANEL_BORDER[2], PANEL_BORDER[3], PANEL_BORDER[4])
-    top:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
-    top:SetPoint("BOTTOMRIGHT", frame, "TOPRIGHT", 0, -2)
-    local bottom = frame:CreateTexture(nil, "BORDER")
-    bottom:SetTexture(PANEL_BORDER[1], PANEL_BORDER[2], PANEL_BORDER[3], PANEL_BORDER[4])
-    bottom:SetPoint("TOPLEFT", frame, "BOTTOMLEFT", 0, 2)
-    bottom:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
-    local left = frame:CreateTexture(nil, "BORDER")
-    left:SetTexture(PANEL_BORDER[1], PANEL_BORDER[2], PANEL_BORDER[3], PANEL_BORDER[4])
-    left:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
-    left:SetPoint("BOTTOMRIGHT", frame, "BOTTOMLEFT", 2, 0)
-    local right = frame:CreateTexture(nil, "BORDER")
-    right:SetTexture(PANEL_BORDER[1], PANEL_BORDER[2], PANEL_BORDER[3], PANEL_BORDER[4])
-    right:SetPoint("TOPLEFT", frame, "TOPRIGHT", -2, 0)
-    right:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
+    local band = frame:CreateTexture(nil, "BACKGROUND")
+    band:SetTexture(UI_PANEL_TOP[1], UI_PANEL_TOP[2], UI_PANEL_TOP[3], 1)
+    band:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
+    band:SetPoint("BOTTOMRIGHT", frame, "TOPRIGHT", 0, -24)
+    local function EdgeLine(anchorPoint, w, h)
+        local tex = frame:CreateTexture(nil, "BORDER")
+        tex:SetTexture(UI_FRAME_BORDER[1], UI_FRAME_BORDER[2], UI_FRAME_BORDER[3], 1)
+        tex:SetPoint(anchorPoint, frame, anchorPoint, 0, 0)
+        tex:SetWidth(w)
+        tex:SetHeight(h)
+        return tex
+    end
+    local topL = EdgeLine("TOPLEFT", 0, 1)
+    local botL = EdgeLine("BOTTOMLEFT", 0, 1)
+    local lefL = EdgeLine("TOPLEFT", 1, 0)
+    local rigL = EdgeLine("TOPRIGHT", 1, 0)
+    local lastW, lastH = -1, -1
+    local prevOnUpdate = frame:GetScript("OnUpdate")
+    frame:SetScript("OnUpdate", function(self, elapsed)
+        local w = frame:GetWidth()
+        local h = frame:GetHeight()
+        if (w or 0) < 10 then
+            w = 320
+        end
+        if (h or 0) < 10 then
+            h = 40
+        end
+        if w ~= lastW or h ~= lastH then
+            lastW, lastH = w, h
+            topL:SetWidth(w)
+            botL:SetWidth(w)
+            lefL:SetHeight(h)
+            rigL:SetHeight(h)
+        end
+        if prevOnUpdate then
+            prevOnUpdate(self, elapsed)
+        end
+    end)
 end
 
---- Small dark button face with a thin border.
+--- Small WoW UIPanelButton-style button face (blue-grey).
 local function MakeButtonBackdrop(button, w, h)
-    local fill = button:CreateTexture(nil, "BACKGROUND")
-    fill:SetTexture(BUTTON_BG[1], BUTTON_BG[2], BUTTON_BG[3], BUTTON_BG[4])
-    fill:SetAllPoints()
-    button._fill = fill
-    EdgeTexture(button, 0, 0, w, 1, BUTTON_BORDER)
-    EdgeTexture(button, 0, h - 1, w, h, BUTTON_BORDER)
-    EdgeTexture(button, 0, 0, 1, h, BUTTON_BORDER)
-    EdgeTexture(button, w - 1, 0, w, h, BUTTON_BORDER)
+    return MakeWowButtonBackdrop(button, w, h, "blue")
 end
 
---- Classic WoW hover + press feedback for our buttons. Hover shows a gold
---- highlight (the client's Button auto-shows the HIGHLIGHT texture on mouse
---- over); while the mouse is held, the backdrop fill flashes gold. Every
---- call is wrapped in pcall so clients without a given feature keep the
---- static look.
+--- WoW hover + press feedback for our buttons. Vertex-colour modulation is
+--- not honoured by this client, so the hover/press tint is applied by
+--- re-SetTexture-ing the face gradient colours (SetTexture is reliable here).
+--- Hover brightens the face and lights the border gold like native buttons;
+--- press darkens the face.
 local function AddButtonFeedback(button, withHover)
     if not button then
         return
     end
+    local function TintFace(factor)
+        local colors = button._gradColors
+        local texes = button._gradTex
+        if not colors or not texes then
+            return
+        end
+        for i, tex in ipairs(texes) do
+            local c = colors[i] or colors[#colors]
+            pcall(tex.SetTexture, tex,
+                math.min(c[1] * factor, 1),
+                math.min(c[2] * factor, 1),
+                math.min(c[3] * factor, 1), 1)
+        end
+    end
+    local function TintBorder(r, g, b)
+        if button._gradBorderTex then
+            pcall(button._gradBorderTex.SetTexture, button._gradBorderTex, r, g, b, 1)
+        end
+    end
+    local function ResetBorder()
+        local b = button._gradBorder
+        if b then
+            TintBorder(b[1], b[2], b[3])
+        end
+    end
+    local function Hover()
+        TintFace(1.3)
+        TintBorder(UI_GOLD_BRIGHT[1], UI_GOLD_BRIGHT[2], UI_GOLD_BRIGHT[3])
+    end
+    local function Press()
+        TintFace(0.7)
+        ResetBorder()
+    end
+    local function Normal()
+        TintFace(button._pressedFlag and 0.6 or 1)
+        ResetBorder()
+    end
     if withHover ~= false then
-        local okHL, hl = pcall(button.CreateTexture, button, nil, "HIGHLIGHT")
-        if okHL and hl then
-            pcall(hl.SetTexture, hl, 1.00, 0.82, 0.30, 0.28)
-            pcall(hl.SetAllPoints, hl)
-            pcall(button.SetHighlightTexture, button, hl)
-        end
+        pcall(button.SetScript, button, "OnEnter", Hover)
+        pcall(button.SetScript, button, "OnLeave", Normal)
     end
-    local fill = button._fill
-    if fill then
-        local okDown = pcall(button.SetScript, button, "OnMouseDown", function()
-            pcall(fill.SetTexture, fill, 1.00, 0.82, 0.30, 0.45)
+    pcall(button.SetScript, button, "OnMouseDown", Press)
+    pcall(button.SetScript, button, "OnMouseUp", Normal)
+end
+
+--- AllBags-style stock button: tries the native UIPanelButtonTemplate first
+--- (named frame — the client needs a name for the template to take), falls
+--- back to the exact plain build AllBags uses (button SetFont/SetTextColor +
+--- tooltip backdrop + square highlight). Text is set through the button, so
+--- the template's own FontString draws it like the quest-log buttons.
+local stockBtnSeq = 0
+local function MakeStockButton(parent, text, width, onClick, height)
+    local h = height or 18
+    stockBtnSeq = stockBtnSeq + 1
+    local name = "QuestEchoStockBtn" .. stockBtnSeq
+    local ok, made = pcall(CreateFrame, "Button", name, parent, "UIPanelButtonTemplate")
+    local button = ok and made or nil
+    if not button then
+        -- plain build, AllBags fallback
+        button = CreateFrame("Button", name, parent)
+        button:SetWidth(width)
+        button:SetHeight(math.max(h, 17))
+        pcall(button.SetFont, button, "Fonts\\FRIZQT__.TTF", 11)
+        pcall(button.SetTextColor, button, 1, 0.82, 0)
+        pcall(function()
+            button:SetBackdrop({
+                bgFile   = "Interface\\Tooltips\\UI-Tooltip-Background",
+                edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+                tileSize = 16, edgeSize = 10,
+                insets   = { left = 2, right = 2, top = 2, bottom = 2 },
+            })
+            button:SetBackdropColor(0.1, 0.1, 0.1, 0.8)
+            button:SetBackdropBorderColor(0.45, 0.45, 0.45, 0.9)
         end)
-        if okDown then
-            pcall(button.SetScript, button, "OnMouseUp", function()
-                pcall(fill.SetTexture, fill, BUTTON_BG[1], BUTTON_BG[2], BUTTON_BG[3], BUTTON_BG[4])
-            end)
-        end
+        pcall(button.SetHighlightTexture, button, "Interface\\Buttons\\ButtonHilight-Square")
+    else
+        button:SetWidth(width)
+        button:SetHeight(h)
     end
+    button:SetText(text)
+    button:SetScript("OnClick", onClick)
+    return button
+end
+
+--- Radio-style pressed state: darkens the button face like a pressed button.
+--- Only affects the hand-drawn fallback (template buttons have their own
+--- visuals); AddButtonFeedback's Normal() honours _pressedFlag so hover/leave
+--- does not undo the pressed look.
+local function SetButtonPressed(button, pressed)
+    if not button then
+        return
+    end
+    button._pressedFlag = pressed and true or nil
+    local texes = button._gradTex
+    local colors = button._gradColors
+    if not texes or not colors then
+        return
+    end
+    local factor = pressed and 0.6 or 1
+    for i, tex in ipairs(texes) do
+        local c = colors[i] or colors[#colors]
+        pcall(tex.SetTexture, tex, math.min(c[1] * factor, 1), math.min(c[2] * factor, 1), math.min(c[3] * factor, 1), 1)
+    end
+end
+
+local function MakeTextButton(parent, text, width, onClick, style)
+    return MakeStockButton(parent, text, width, onClick, 18)
 end
 
 local function ColorForEvent(event)
@@ -2067,7 +2305,7 @@ local function FormatStatus()
 
     local text
     if Addon.db.char.IsPaused then
-        text = format("|cffffcc00%s|r", L("[QuestEcho paused]", "[QuestEcho 已暂停]"))
+        text = format("|cffffcc00%s|r", L("[Paused]", "[已暂停]"))
     elseif current then
         local label = current.title or current.name or current.fileName or "?"
         text = format("%s%s|r", ColorForEvent(current.event), label)
@@ -2075,9 +2313,9 @@ local function FormatStatus()
             text = text .. format("  |cffcccccc(+%d)|r", queued)
         end
     elseif queued > 0 then
-        text = format("|cffcccccc%s|r", format(L("[QuestEcho %d queued...]", "[QuestEcho %d 排队中...]"), queued))
+        text = format("|cffcccccc%s|r", format(L("%d queued...", "%d 排队中..."), queued))
     else
-        text = format("|cff33ffcc%s|r", L("[QuestEcho ready]", "[QuestEcho 就绪]"))
+        text = format("|cff33ffcc%s|r", L("[Ready]", "[就绪]"))
     end
     return text
 end
@@ -2195,77 +2433,57 @@ function SoundQueueUI:Create()
     status:SetHeight(16)
     pcall(status.SetJustifyH, status, "LEFT")
     pcall(status.SetFont, status, FONT, 12)
+    -- WoW-style black text shadow under the status line.
+    pcall(status.SetShadowColor, status, 0, 0, 0, 1)
+    pcall(status.SetShadowOffset, status, 1, -1)
 
-    local clearButton = CreateFrame("Button", "QuestEchoClearButton", frame)
-    clearButton:SetWidth(20)
-    clearButton:SetHeight(20)
-    clearButton:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -4, -4)
-    clearButton:SetScript("OnClick", function()
+    local clearButton = MakeStockButton(frame, "X", 20, function()
         SoundQueue:RemoveAllSoundsFromQueue()
     end)
-    MakeButtonBackdrop(clearButton, 20, 20)
-    AddButtonFeedback(clearButton)
-    local clearText = clearButton:CreateFontString(nil, "OVERLAY", "GameFontWhite")
-    clearText:SetPoint("CENTER")
-    clearText:SetText("X")
-    pcall(clearText.SetFont, clearText, FONT, 12)
+    clearButton:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -4, -4)
 
-    local pauseButton = CreateFrame("Button", "QuestEchoPauseButton", frame)
-    pauseButton:SetWidth(20)
-    pauseButton:SetHeight(20)
-    pauseButton:SetPoint("TOPRIGHT", clearButton, "TOPLEFT", -2, 0)
-    pauseButton:SetScript("OnClick", function()
+    local pauseButton = MakeStockButton(frame, "II", 20, function()
         SoundQueue:TogglePauseQueue()
     end)
-    MakeButtonBackdrop(pauseButton, 20, 20)
-    AddButtonFeedback(pauseButton)
-    local pauseText = pauseButton:CreateFontString(nil, "OVERLAY", "GameFontWhite")
-    pauseText:SetPoint("CENTER")
-    pauseText:SetText("II")
-    pcall(pauseText.SetFont, pauseText, FONT, 12)
+    pauseButton:SetPoint("TOPRIGHT", clearButton, "TOPLEFT", -2, 0)
 
-    local settingsButton = CreateFrame("Button", "QuestEchoSettingsButton", frame)
-    settingsButton:SetWidth(20)
-    settingsButton:SetHeight(20)
-    settingsButton:SetPoint("TOPRIGHT", pauseButton, "TOPLEFT", -2, 0)
-    settingsButton:SetScript("OnClick", function()
-        -- QuestEcho.OptionsUI instead of the OptionsUI upvalue: that local is
-        -- declared later in this file, so a direct reference here would be a
-        -- (nil) global.
-        QuestEcho.OptionsUI:Toggle()
+    local settingsButton = MakeStockButton(frame, L("Settings", "设置"), 52, function()
+        local ok, err = pcall(function()
+            QuestEcho.OptionsUI:Toggle()
+        end)
+        if not ok then
+            Print("|cffff3333[QuestEcho]|r settings toggle error: " .. tostring(err))
+        end
     end)
-    MakeButtonBackdrop(settingsButton, 20, 20)
-    -- small gear glyph drawn from solid rectangles (this client's pak has no
-    -- WoW-style Interface texture paths, so texture files cannot be used)
-    local gearGold = { 1.00, 0.82, 0.31 }
-    local function GearRect(tex, left, right, top, bottom)
-        tex:SetTexture(gearGold[1], gearGold[2], gearGold[3], 1)
-        tex:SetPoint("TOPLEFT", settingsButton, "TOPLEFT", left, -top)
-        tex:SetPoint("BOTTOMRIGHT", settingsButton, "TOPLEFT", right, -bottom)
-    end
-    local teethN = settingsButton:CreateTexture(nil, "OVERLAY")
-    GearRect(teethN, 5, 15, 0, 3)
-    local teethS = settingsButton:CreateTexture(nil, "OVERLAY")
-    GearRect(teethS, 5, 15, 17, 20)
-    local teethW = settingsButton:CreateTexture(nil, "OVERLAY")
-    GearRect(teethW, 0, 3, 5, 15)
-    local teethE = settingsButton:CreateTexture(nil, "OVERLAY")
-    GearRect(teethE, 17, 20, 5, 15)
-    local spokeN = settingsButton:CreateTexture(nil, "OVERLAY")
-    GearRect(spokeN, 9, 11, 3, 8)
-    local spokeS = settingsButton:CreateTexture(nil, "OVERLAY")
-    GearRect(spokeS, 9, 11, 12, 17)
-    local spokeW = settingsButton:CreateTexture(nil, "OVERLAY")
-    GearRect(spokeW, 3, 8, 9, 11)
-    local spokeE = settingsButton:CreateTexture(nil, "OVERLAY")
-    GearRect(spokeE, 12, 17, 9, 11)
-    local hub = settingsButton:CreateTexture(nil, "OVERLAY")
-    GearRect(hub, 8, 12, 8, 12)
-    local settingsHL = settingsButton:CreateTexture(nil, "HIGHLIGHT")
-    settingsHL:SetTexture(1.00, 0.82, 0.30, 0.25)
-    settingsHL:SetAllPoints()
-    pcall(settingsButton.SetHighlightTexture, settingsButton, settingsHL)
-    AddButtonFeedback(settingsButton, false) -- already has a hover highlight
+    settingsButton:SetPoint("TOPRIGHT", pauseButton, "TOPLEFT", -2, 0)
+
+    -- Progress bar for the current voice line, in WoW health-bar style:
+    -- near-black track, dark-gold trim, green gradient fill. The fill width
+    -- is updated every frame by SoundQueueUI:UpdateProgress.
+    local progBar = CreateFrame("Frame", "QuestEchoProgressBar", frame)
+    progBar:SetWidth(304)
+    progBar:SetHeight(6)
+    progBar:SetPoint("TOPLEFT", frame, "TOPLEFT", 8, -27)
+    local progBg = progBar:CreateTexture(nil, "BACKGROUND")
+    progBg:SetTexture(0.02, 0.02, 0.02, 1)
+    progBg:SetAllPoints()
+    EdgeTexture(progBar, 0, 0, 304, 1, UI_GOLD_DARK)
+    EdgeTexture(progBar, 0, 5, 304, 6, UI_GOLD_DARK)
+    EdgeTexture(progBar, 0, 0, 1, 6, UI_GOLD_DARK)
+    EdgeTexture(progBar, 303, 0, 304, 6, UI_GOLD_DARK)
+    local progFillTop = progBar:CreateTexture(nil, "ARTWORK")
+    progFillTop:SetTexture(UI_GREEN_TOP[1], UI_GREEN_TOP[2], UI_GREEN_TOP[3], 1)
+    progFillTop:SetPoint("TOPLEFT", progBar, "TOPLEFT", 1, -1)
+    progFillTop:SetHeight(2)
+    progFillTop:SetWidth(0)
+    local progFillBot = progBar:CreateTexture(nil, "ARTWORK")
+    progFillBot:SetTexture(UI_GREEN_BOTTOM[1], UI_GREEN_BOTTOM[2], UI_GREEN_BOTTOM[3], 1)
+    progFillBot:SetPoint("TOPLEFT", progBar, "TOPLEFT", 1, -3)
+    progFillBot:SetPoint("BOTTOMLEFT", progBar, "BOTTOMLEFT", 1, 1)
+    progFillBot:SetWidth(0)
+    self.progBar = progBar
+    self.progFillTop = progFillTop
+    self.progFillBot = progFillBot
 
     -- Queue list rows (one per line; current line first). Reused across
     -- updates so we never leak frames.
@@ -2274,33 +2492,34 @@ function SoundQueueUI:Create()
         local row = CreateFrame("Frame", nil, frame)
         row:SetWidth(316)
         row:SetHeight(QUEUE_ROW_HEIGHT)
-        row:SetPoint("TOPLEFT", frame, "TOPLEFT", 2, -24 - (i - 1) * QUEUE_ROW_HEIGHT)
+        row:SetPoint("TOPLEFT", frame, "TOPLEFT", 2, -34 - (i - 1) * QUEUE_ROW_HEIGHT)
 
+        -- row backdrop: near-black, playing rows get a gold-tinted face later
+        -- (RebuildRows re-tints rowBg).
         local rowBg = row:CreateTexture(nil, "BACKGROUND")
-        rowBg:SetTexture(0, 0, 0, 0.25)
+        rowBg:SetTexture(0, 0, 0, 0.4)
         rowBg:SetAllPoints()
+        -- thin inner trim so rows read as WoW list rows
+        local rowTrim = row:CreateTexture(nil, "BORDER")
+        rowTrim:SetTexture(UI_GOLD_DARK[1], UI_GOLD_DARK[2], UI_GOLD_DARK[3], 0.35)
+        rowTrim:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 0)
+        rowTrim:SetPoint("BOTTOMRIGHT", row, "TOPRIGHT", 0, -1)
+        row.rowTrim = rowTrim
 
-        local xButton = CreateFrame("Button", nil, row)
-        xButton:SetWidth(14)
-        xButton:SetHeight(14)
-        xButton:SetPoint("LEFT", row, "LEFT", 2, 0)
-        xButton:SetScript("OnClick", function()
+        local xButton = MakeStockButton(row, "X", 16, function()
             if row.soundId then
                 SoundQueue:RemoveSound(row.soundId)
             end
-        end)
-        MakeButtonBackdrop(xButton, 14, 14)
-        AddButtonFeedback(xButton)
-        local xText = xButton:CreateFontString(nil, "OVERLAY", "GameFontWhite")
-        xText:SetPoint("CENTER")
-        xText:SetText("X")
-        pcall(xText.SetFont, xText, FONT, 9)
+        end, 16)
+        xButton:SetPoint("LEFT", row, "LEFT", 2, 0)
 
         local label = row:CreateFontString(nil, "OVERLAY", "GameFontWhite")
         label:SetPoint("LEFT", xButton, "RIGHT", 4, 0)
         label:SetHeight(14)
         pcall(label.SetJustifyH, label, "LEFT")
         pcall(label.SetFont, label, FONT, 11)
+        pcall(label.SetShadowColor, label, 0, 0, 0, 1)
+        pcall(label.SetShadowOffset, label, 1, -1)
 
         row.xButton = xButton
         row.label = label
@@ -2331,9 +2550,39 @@ function SoundQueueUI:Update()
     end
     self.frame:Show()
     if self.status then
-        self.status:SetText(FormatStatus())
+        -- WoW-style title: gold "QuestEcho" brand + the state text.
+        self.status:SetText(format("|cffffd200%s|r %s", L("QuestEcho", "QuestEcho"), FormatStatus()))
     end
     self:RebuildRows()
+    self:UpdateProgress()
+end
+
+--- Advance the progress bar for the current voice line (green WoW bar).
+--- Called every frame from the main OnUpdate and after every queue change.
+function SoundQueueUI:UpdateProgress()
+    if not self.frame or not self.progFillTop then
+        return
+    end
+    -- Freeze while paused (ResumeQueue restarts the line and re-arms startedAt).
+    if Addon.db.char.IsPaused then
+        return
+    end
+    local current = SoundQueue.current
+    local pct = 0
+    if current and current.startedAt and current.length and current.length > 0 then
+        pct = (GetTime() - current.startedAt) / current.length
+        pct = math.max(0, math.min(1, pct))
+    end
+    local okW, barW = pcall(self.progBar.GetWidth, self.progBar)
+    local w = 0
+    if okW and barW then
+        w = math.floor((barW - 2) * pct)
+    end
+    if w < 0 then w = 0 end
+    if self.progFillTop:GetWidth() ~= w then
+        self.progFillTop:SetWidth(w)
+        self.progFillBot:SetWidth(w)
+    end
 end
 
 --- Fill the queue rows with the current line (first) and every queued line.
@@ -2365,15 +2614,22 @@ function SoundQueueUI:RebuildRows()
                 local state = paused and L("(paused)", "(已暂停)") or L("(playing)", "(播放中)")
                 row.label:SetText(format("|cffffd24a>|r %s%s|r  |cffcccccc%s|r",
                     ColorForEvent(sound.event), labelText, state))
-                row.rowBg:SetTexture(1.00, 0.82, 0.31, 0.12)
+                row.rowBg:SetTexture(UI_GOLD_TEXT[1], UI_GOLD_TEXT[2], UI_GOLD_TEXT[3], 0.14)
+                if row.rowTrim then
+                    row.rowTrim:SetTexture(UI_GOLD_TEXT[1], UI_GOLD_TEXT[2], UI_GOLD_TEXT[3], 0.6)
+                end
             else
                 row.label:SetText(format("%s%s|r", ColorForEvent(sound.event), labelText))
-                row.rowBg:SetTexture(0, 0, 0, 0.25)
+                row.rowBg:SetTexture(0, 0, 0, 0.4)
+                if row.rowTrim then
+                    row.rowTrim:SetTexture(UI_GOLD_DARK[1], UI_GOLD_DARK[2], UI_GOLD_DARK[3], 0.35)
+                end
             end
         end
     end
 
-    frame:SetHeight(24 + shown * QUEUE_ROW_HEIGHT)
+    -- 24px title row + 6px progress bar + 4px gap + the queue rows.
+    frame:SetHeight(34 + shown * QUEUE_ROW_HEIGHT)
 end
 
 
@@ -2488,37 +2744,25 @@ function QuestLogUI:Create()
         frame.scrollOffset = math.max(0, (frame.scrollOffset or 0) - (delta or 0))
         QuestLogUI:Update()
     end)
+    ApplyClassicBackdrop(frame, 460, 60 + QUESTLOG_VISIBLE_ROWS * QUESTLOG_ROW_HEIGHT + 26)
 
     local title = frame:CreateFontString(nil, "OVERLAY", "GameFontWhite")
     title:SetPoint("TOPLEFT", frame, "TOPLEFT", 8, -8)
     title:SetText(L("QuestEcho — Quest Replay", "QuestEcho — 任务语音回放"))
     pcall(title.SetFont, title, FONT, 13)
+    pcall(title.SetTextColor, title, UI_GOLD_TEXT[1], UI_GOLD_TEXT[2], UI_GOLD_TEXT[3])
+    pcall(title.SetShadowColor, title, 0, 0, 0, 1)
+    pcall(title.SetShadowOffset, title, 1, -1)
 
-    local closeButton = CreateFrame("Button", nil, frame)
-    closeButton:SetWidth(20)
-    closeButton:SetHeight(20)
-    closeButton:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -4, -4)
-    closeButton:SetScript("OnClick", function()
+    local closeButton = MakeStockButton(frame, "X", 20, function()
         QuestLogUI:Toggle()
     end)
-    AddButtonFeedback(closeButton)
-    local closeText = closeButton:CreateFontString(nil, "OVERLAY", "GameFontWhite")
-    closeText:SetPoint("CENTER")
-    closeText:SetText("X")
-    pcall(closeText.SetFont, closeText, FONT, 11)
+    closeButton:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -4, -4)
 
-    local refreshButton = CreateFrame("Button", nil, frame)
-    refreshButton:SetWidth(20)
-    refreshButton:SetHeight(20)
-    refreshButton:SetPoint("RIGHT", closeButton, "LEFT", -4, 0)
-    refreshButton:SetScript("OnClick", function()
+    local refreshButton = MakeStockButton(frame, "R", 20, function()
         QuestLogUI:Update(true)
     end)
-    AddButtonFeedback(refreshButton)
-    local refreshText = refreshButton:CreateFontString(nil, "OVERLAY", "GameFontWhite")
-    refreshText:SetPoint("CENTER")
-    refreshText:SetText("R")
-    pcall(refreshText.SetFont, refreshText, FONT, 11)
+    refreshButton:SetPoint("RIGHT", closeButton, "LEFT", -4, 0)
 
     local hQuest = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     hQuest:SetPoint("TOPLEFT", frame, "TOPLEFT", 10, -32)
@@ -2543,32 +2787,15 @@ function QuestLogUI:Create()
         label:SetHeight(16)
         pcall(label.SetFont, label, FONT, 10)
 
-        local acceptButton = CreateFrame("Button", nil, row)
-        acceptButton:SetWidth(84)
-        acceptButton:SetHeight(16)
-        acceptButton:SetPoint("RIGHT", row, "RIGHT", -94, 0)
-        local acceptText = acceptButton:CreateFontString(nil, "OVERLAY", "GameFontWhite")
-        acceptText:SetPoint("CENTER")
-        acceptText:SetText(L("accept", "接取"))
-        pcall(acceptText.SetFont, acceptText, FONT, 10)
-
-        local completeButton = CreateFrame("Button", nil, row)
-        completeButton:SetWidth(84)
-        completeButton:SetHeight(16)
-        completeButton:SetPoint("RIGHT", row, "RIGHT", -4, 0)
-        local completeText = completeButton:CreateFontString(nil, "OVERLAY", "GameFontWhite")
-        completeText:SetPoint("CENTER")
-        completeText:SetText(L("complete", "完成"))
-        pcall(completeText.SetFont, completeText, FONT, 10)
-
-        acceptButton:SetScript("OnClick", function()
+        local acceptButton = MakeStockButton(row, L("accept", "接取"), 84, function()
             QuestLogUI:PlayQuest(row.questID, "accept", row.title)
-        end)
-        AddButtonFeedback(acceptButton)
-        completeButton:SetScript("OnClick", function()
+        end, 16)
+        acceptButton:SetPoint("RIGHT", row, "RIGHT", -94, 0)
+
+        local completeButton = MakeStockButton(row, L("complete", "完成"), 84, function()
             QuestLogUI:PlayQuest(row.questID, "complete", row.title)
-        end)
-        AddButtonFeedback(completeButton)
+        end, 16)
+        completeButton:SetPoint("RIGHT", row, "RIGHT", -4, 0)
 
         row.label = label
         row.acceptButton = acceptButton
@@ -2625,17 +2852,29 @@ function QuestLogUI:Update(forceReload)
             if quest.hasAccept then
                 row.acceptButton:Enable()
                 row.acceptButton:SetAlpha(1)
+                if row.acceptButton.label then
+                    pcall(row.acceptButton.label.SetTextColor, row.acceptButton.label, 1.0, 0.82, 0.05)
+                end
             else
                 row.acceptButton:Disable()
-                row.acceptButton:SetAlpha(0.25)
+                row.acceptButton:SetAlpha(0.55)
+                if row.acceptButton.label then
+                    pcall(row.acceptButton.label.SetTextColor, row.acceptButton.label, 0.55, 0.55, 0.55)
+                end
             end
             row.completeButton:Show()
             if quest.hasComplete then
                 row.completeButton:Enable()
                 row.completeButton:SetAlpha(1)
+                if row.completeButton.label then
+                    pcall(row.completeButton.label.SetTextColor, row.completeButton.label, 1.0, 0.82, 0.05)
+                end
             else
                 row.completeButton:Disable()
-                row.completeButton:SetAlpha(0.25)
+                row.completeButton:SetAlpha(0.55)
+                if row.completeButton.label then
+                    pcall(row.completeButton.label.SetTextColor, row.completeButton.label, 0.55, 0.55, 0.55)
+                end
             end
             row.questID = quest.questID
             row.title = quest.title
@@ -2754,22 +2993,13 @@ function QuestLogHook:Attach()
             or (type(QuestInfoTitleHeader) == "table" and QuestInfoTitleHeader)
             or nil
 
-        self.acceptButton = CreateFrame("Button", "QuestEchoQuestLogPlay", parent)
-        self.acceptButton:SetWidth(38)
-        self.acceptButton:SetHeight(18)
-        -- same classic look as the status bar / settings buttons
-        MakeButtonBackdrop(self.acceptButton, 38, 18)
-        local voiceText = self.acceptButton:CreateFontString(nil, "OVERLAY", "GameFontWhite")
-        voiceText:SetPoint("CENTER")
-        voiceText:SetText("Echo")
-        pcall(voiceText.SetFont, voiceText, FONT, 11)
-        self.acceptButton:SetScript("OnClick", function()
+        self.acceptButton = MakeStockButton(parent, "Echo", 38, function()
             local ok, err = pcall(QuestLogHook.PlaySelected, QuestLogHook, "accept")
             if not ok then
                 Print(format("|cffff3333[QuestEcho]|r %s", format(L("play error: %s", "播放错误：%s"), tostring(err))))
             end
-        end)
-        AddButtonFeedback(self.acceptButton)
+        end, 18)
+        self.voiceText = nil
 
         self.parent = parent
         self.titleRegion = titleRegion
@@ -2899,14 +3129,21 @@ function QuestLogHook:Update()
         return
     end
     if HasQuestVoice(questID, "accept") then
+        -- enabled: red face with the gold label
         self.acceptButton:Enable()
         self.acceptButton:SetAlpha(1)
+        if self.acceptButton.label then
+            pcall(self.acceptButton.label.SetTextColor, self.acceptButton.label, 1.0, 0.82, 0.05)
+        end
     else
-        -- No voice line for this quest: keep the button visible but inert.
+        -- No voice line for this quest: grey disabled state, kept inert.
         -- (Clicking it on this client can hang the game, so never let it
         -- through to the play path.)
         self.acceptButton:Disable()
-        self.acceptButton:SetAlpha(0.25)
+        self.acceptButton:SetAlpha(0.55)
+        if self.acceptButton.label then
+            pcall(self.acceptButton.label.SetTextColor, self.acceptButton.label, 0.55, 0.55, 0.55)
+        end
     end
 end
 
@@ -3137,21 +3374,7 @@ local function RunVoiceVolumeProbe()
     pf.nextAt = 0
 end
 
-local function MakeTextButton(parent, text, width, onClick)
-    local button = CreateFrame("Button", nil, parent)
-    button:SetWidth(width)
-    button:SetHeight(18)
-    button:SetScript("OnClick", onClick)
-    MakeButtonBackdrop(button, width, 18)
-    AddButtonFeedback(button)
-    local label = button:CreateFontString(nil, "OVERLAY", "GameFontWhite")
-    label:SetPoint("CENTER")
-    label:SetText(text)
-    pcall(label.SetFont, label, FONT, 11)
-    button.label = label
-    return button
-end
-
+--- Stock WoW UIPanelButtonTemplate button: native red face with gold label,
 local function RefreshOptionsUI()
     if not OptionsUI.frame then
         return
@@ -3159,11 +3382,18 @@ local function RefreshOptionsUI()
     local profile = Addon.db.profile
     OptionsUI.delayLabel:SetText(format(L("Delay before lines: %.1f s", "播放前延迟：%.1f 秒"), profile.Delay))
     OptionsUI.statusLabel:SetText(format(L("Status bar: %s", "状态栏：%s"), profile.ShowUI and L("shown", "显示") or L("hidden", "隐藏")))
-    OptionsUI.debugLabel:SetText(format(L("Debug messages: %s", "调试信息：%s"), profile.Debug and L("on", "开") or L("off", "关")))
     OptionsUI.voiceLabel:SetText(format(L("Voice volume: %.2f x", "语音音量：%.2f 倍"), profile.VoiceVolume or 1))
     for _, entry in ipairs(GOSSIP_BUTTONS) do
         local active = profile.GossipFrequency == entry.value
-        entry.button.label:SetText(active and (format("|cff33ffcc%s|r", entry.name)) or entry.name)
+        SetButtonPressed(entry.button, active)
+        local label = entry.button.label
+        if not label then
+            local ok, fs = pcall(entry.button.GetFontString, entry.button)
+            label = ok and fs or nil
+        end
+        if label then
+            label:SetText(active and (format("|cffffee8c%s|r", entry.name)) or entry.name)
+        end
     end
 end
 
@@ -3202,12 +3432,12 @@ function OptionsUI:Create()
 
     local frame = CreateFrame("Frame", "QuestEchoOptionsFrame", UIParent)
     frame:SetWidth(320)
-    frame:SetHeight(230)
+    frame:SetHeight(188)
     self.frame = frame
     self:ApplySavedPos()
     frame:SetClampedToScreen(true)
     frame:EnableMouse(true)
-    ApplyClassicBackdrop(frame, 320, 230)
+    ApplyClassicBackdrop(frame, 320, 188)
     -- Manual Shift-drag, same as the status bar (StartMoving is unreliable
     -- on this client).
     frame:SetScript("OnMouseDown", function()
@@ -3265,10 +3495,14 @@ function OptionsUI:Create()
     title:SetPoint("TOPLEFT", frame, "TOPLEFT", 8, -8)
     title:SetText(L("QuestEcho Settings", "QuestEcho 设置"))
     pcall(title.SetFont, title, FONT, 13)
+    -- WoW panel title: gold with a black shadow.
+    pcall(title.SetTextColor, title, UI_GOLD_TEXT[1], UI_GOLD_TEXT[2], UI_GOLD_TEXT[3])
+    pcall(title.SetShadowColor, title, 0, 0, 0, 1)
+    pcall(title.SetShadowOffset, title, 1, -1)
 
     local closeButton = MakeTextButton(frame, "X", 20, function()
         OptionsUI:Toggle()
-    end)
+    end, "red")
     closeButton:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -4, -4)
 
     local gossipTitle = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -3312,25 +3546,15 @@ function OptionsUI:Create()
     end)
     statusButton:SetPoint("TOPLEFT", frame, "TOPLEFT", 230, -106)
 
-    local debugLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    debugLabel:SetPoint("TOPLEFT", frame, "TOPLEFT", 10, -136)
-    pcall(debugLabel.SetFont, debugLabel, FONT, 11)
-
-    local debugButton = MakeTextButton(frame, L("toggle", "切换"), 70, function()
-        Addon.db.profile.Debug = not Addon.db.profile.Debug
-        RefreshOptionsUI()
-    end)
-    debugButton:SetPoint("TOPLEFT", frame, "TOPLEFT", 230, -132)
-
     local voiceLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    voiceLabel:SetPoint("TOPLEFT", frame, "TOPLEFT", 10, -162)
+    voiceLabel:SetPoint("TOPLEFT", frame, "TOPLEFT", 10, -136)
     pcall(voiceLabel.SetFont, voiceLabel, FONT, 11)
 
     local voiceMinus = MakeTextButton(frame, "-", 24, function()
         Addon.db.profile.VoiceVolume = math.max(0.25, math.floor((Addon.db.profile.VoiceVolume - 0.25) / 0.25 + 0.5) * 0.25)
         RefreshOptionsUI()
     end)
-    voiceMinus:SetPoint("TOPLEFT", frame, "TOPLEFT", 230, -158)
+    voiceMinus:SetPoint("TOPLEFT", frame, "TOPLEFT", 230, -132)
 
     local voicePlus = MakeTextButton(frame, "+", 24, function()
         Addon.db.profile.VoiceVolume = math.min(3, math.floor((Addon.db.profile.VoiceVolume + 0.25) / 0.25 + 0.5) * 0.25)
@@ -3348,15 +3572,9 @@ function OptionsUI:Create()
     end)
     clearButton:SetPoint("LEFT", testButton, "RIGHT", 6, 0)
 
-    local closeAllButton = MakeTextButton(frame, L("Close", "关闭"), 60, function()
-        OptionsUI:Toggle()
-    end)
-    closeAllButton:SetPoint("RIGHT", frame, "BOTTOMRIGHT", -10, 8)
-
     self.frame = frame
     self.delayLabel = delayLabel
     self.statusLabel = statusLabel
-    self.debugLabel = debugLabel
     self.voiceLabel = voiceLabel
     RefreshOptionsUI()
 end
@@ -3368,10 +3586,18 @@ function OptionsUI:Toggle()
             Print(format("|cffff3333[QuestEcho]|r settings window failed to open: %s", tostring(err)))
             return
         end
+        -- First creation: show it right away. This client shows frames as
+        -- soon as they are created, so checking IsShown() here would hide
+        -- the freshly created panel (the "first click does nothing" bug).
+        self:ApplySavedPos()
+        RefreshOptionsUI()
+        self.frame:Show()
+        return
     end
     if self.frame:IsShown() then
         self.frame:Hide()
     else
+        self:ApplySavedPos()
         RefreshOptionsUI()
         self.frame:Show()
     end
@@ -3959,6 +4185,7 @@ timerFrame:SetScript("OnUpdate", function()
     QuestEchoDB = Addon.db
     Utils:MaybeCaptureBaseline()
     SoundQueue:OnUpdate()
+    SoundQueueUI:UpdateProgress()
     GossipWatcher:OnUpdate()
     QuestDetailWatcher:OnUpdate()
     QuestAcceptWatcher:OnUpdate()
@@ -4121,6 +4348,56 @@ local function HandleSlashCommand(input)
             end
         end
         Print("|cff33ffcc[QuestEcho]|r -- diag done --")
+    elseif command == "uidiag" then
+        -- UI renderer diagnostic: which construction tints gold?
+        -- A = Frame + gradient, B = Button + gradient, D = Frame + flat,
+        -- E = Button + flat. Screenshot and report which look gold.
+        local parent = CreateFrame("Frame", nil, UIParent)
+        parent:SetPoint("CENTER", 0, 200)
+        parent:SetWidth(700)
+        parent:SetHeight(140)
+        parent:SetFrameStrata("DIALOG")
+        local function MakeTest(typ, x, label, grad)
+            local f
+            if typ == "button" then
+                f = CreateFrame("Button", nil, parent)
+            else
+                f = CreateFrame("Frame", nil, parent)
+            end
+            f:SetPoint("TOPLEFT", parent, "TOPLEFT", x, -20)
+            f:SetWidth(120)
+            f:SetHeight(50)
+            if grad then
+                GradientFill(f, 120, 50, "BACKGROUND", {
+                    { 0.50, UI_GREY_TOP[1], UI_GREY_TOP[2], UI_GREY_TOP[3] },
+                    { 0.15, UI_GREY_MID[1], UI_GREY_MID[2], UI_GREY_MID[3] },
+                    { 0.15, UI_GREY_DARK[1], UI_GREY_DARK[2], UI_GREY_DARK[3] },
+                    { 0.20, UI_GREY_BOTTOM[1], UI_GREY_BOTTOM[2], UI_GREY_BOTTOM[3] },
+                })
+            else
+                local fill = f:CreateTexture(nil, "BACKGROUND")
+                fill:SetTexture(UI_GREY_TOP[1], UI_GREY_TOP[2], UI_GREY_TOP[3], 1)
+                fill:SetAllPoints()
+            end
+            EdgeTexture(f, 0, 0, 120, 1, UI_GOLD_BRIGHT)
+            EdgeTexture(f, 0, 49, 120, 50, UI_GOLD_BRIGHT)
+            EdgeTexture(f, 0, 0, 1, 50, UI_GOLD_BRIGHT)
+            EdgeTexture(f, 119, 0, 120, 50, UI_GOLD_BRIGHT)
+            local hl = f:CreateTexture(nil, "BORDER")
+            hl:SetTexture(UI_GREY_HILIGHT[1], UI_GREY_HILIGHT[2], UI_GREY_HILIGHT[3], 0.8)
+            hl:SetPoint("TOPLEFT", f, "TOPLEFT", 1, -1)
+            hl:SetPoint("BOTTOMRIGHT", f, "TOPRIGHT", -1, -2)
+            local lab = parent:CreateFontString(nil, "OVERLAY", "GameFontWhite")
+            lab:SetPoint("TOPLEFT", f, "TOPLEFT", 0, 4)
+            lab:SetText(label)
+            lab:SetTextColor(1, 1, 1, 1)
+            return f
+        end
+        MakeTest("frame", 20, "A Frame+grad", true)
+        MakeTest("button", 160, "B Button+grad", true)
+        MakeTest("frame", 300, "D Frame+flat", false)
+        MakeTest("button", 440, "E Button+flat", false)
+        Print("|cff33ffcc[QuestEcho]|r uidiag: 4 test panels at screen center (A/B/D/E). Screenshot them and tell me which look gold.")
     elseif command == "play" then
         local qid = tonumber(arg)
         if not qid then
@@ -4299,11 +4576,17 @@ pcall(DataModules.EnumerateAddons, DataModules)
 
 -- Actively load the data pack matching the client locale. The data packs are
 -- LoadOnDemand: without this call their Module.lua never runs (the old
--- VoiceOver addon loaded its data pack the same way). zhCN clients get the
--- QuestEchoData-zhCN pack, everyone else the QuestEchoData / bundled data.
+-- VoiceOver addon loaded its data pack the same way). Locale-specific clients
+-- get their own pack (zhCN / ruRU / esES), everyone else the base pack.
+local DATA_PACK_BY_LOCALE =
+{
+    ["zhCN"] = "QuestEchoData-zhCN",
+    ["ruRU"] = "QuestEchoData-ruRU",
+    ["esES"] = "QuestEchoData-esES",
+}
 local function LoadLocaleDataPack()
     local ok, locale = pcall(GetLocale)
-    local addonName = (ok and locale == "zhCN") and "QuestEchoData-zhCN" or "QuestEchoData"
+    local addonName = (ok and DATA_PACK_BY_LOCALE[locale]) or "QuestEchoData"
     local loaded, reason = pcall(LoadAddOn, addonName)
     if not loaded then
         -- Some clients expose the loader under a different name.

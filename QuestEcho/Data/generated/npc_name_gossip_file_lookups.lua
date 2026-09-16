@@ -1,5 +1,5 @@
 if not QuestEcho or not QuestEcho.DataModules then return end
-if GetLocale() == "zhCN" then return end
+if GetLocale() == "zhCN" or GetLocale() == "ruRU" or GetLocale() == "esES" then return end
 QuestEchoData.GossipLookupByNPCName = {
 	["Stormwind City Guard"] = {
 		["Gryphons, eh? Never really cared for the beasts but to each their own.You can find Dungar Longdrink on the rampart in the Trade District."] = "258744fe85450f544093d5fd17856341",

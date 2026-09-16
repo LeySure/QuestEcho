@@ -1,5 +1,5 @@
 if not QuestEcho or not QuestEcho.DataModules then return end
-if GetLocale() == "zhCN" or GetLocale() == "ruRU" or GetLocale() == "esES" then return end
+if GetLocale() ~= "esES" then return end
 
 QuestEchoData = {}
 
@@ -12,4 +12,4 @@ function QuestEchoData:GetSoundPath(fileName, event)
     end
 end
 
-QuestEcho.DataModules:Register("QuestEchoData", QuestEchoData)
+QuestEcho.DataModules:Register("QuestEchoData", QuestEchoData, "QuestEchoData-esES")

@@ -1,5 +1,5 @@
 if not QuestEcho or not QuestEcho.DataModules then return end
-if GetLocale() == "zhCN" then return end
+if GetLocale() == "zhCN" or GetLocale() == "ruRU" or GetLocale() == "esES" then return end
 QuestEchoData.QuestIDLookup = {
 	["accept"] = {
 		["Jitters' Growling Gut"] = 5,

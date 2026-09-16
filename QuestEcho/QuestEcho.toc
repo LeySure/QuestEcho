@@ -3,7 +3,7 @@
 ## Title-zhCN: QuestEcho（任务语音）
 ## Notes: Voice lines for quests and NPC gossip (Emberveil / Unreal Azeroth port)
 ## Author: Leysure
-## Version: 1.5.3
+## Version: 1.5.4
 ## SavedVariables: QuestEchoDB
 Core.lua
 Data\Module.lua
@@ -22,3 +22,19 @@ Data\zhCN\generated\npc_name_gossip_file_lookups.lua
 Data\zhCN\generated\gossip_file_lookups.lua
 Data\zhCN\generated\selftest_files.lua
 Data\zhCN\generated\sound_length_table.lua
+Data\ruRU\Module.lua
+Data\ruRU\generated\gossip_file_lookups.lua
+Data\ruRU\generated\npc_name_gossip_file_lookups.lua
+Data\ruRU\generated\npc_name_lookups.lua
+Data\ruRU\generated\quest_id_lookups.lua
+Data\ruRU\generated\questlog_npc_lookups.lua
+Data\ruRU\generated\selftest_files.lua
+Data\ruRU\generated\sound_length_table.lua
+Data\esES\Module.lua
+Data\esES\generated\gossip_file_lookups.lua
+Data\esES\generated\npc_name_gossip_file_lookups.lua
+Data\esES\generated\npc_name_lookups.lua
+Data\esES\generated\quest_id_lookups.lua
+Data\esES\generated\questlog_npc_lookups.lua
+Data\esES\generated\selftest_files.lua
+Data\esES\generated\sound_length_table.lua
