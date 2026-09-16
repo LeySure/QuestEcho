@@ -2265,10 +2265,9 @@ local function MakeStockButton(parent, text, width, onClick, height)
     return button
 end
 
---- Radio-style pressed state: darkens the button face like a pressed button.
---- Only affects the hand-drawn fallback (template buttons have their own
---- visuals); AddButtonFeedback's Normal() honours _pressedFlag so hover/leave
---- does not undo the pressed look.
+--- Radio-style pressed state: selected choice keeps the pushed-in look.
+--- Template buttons get SetButtonState("PUSHED") (their own pressed texture);
+--- the hand-drawn fallback darkens the gradient face instead.
 local function SetButtonPressed(button, pressed)
     if not button then
         return
@@ -2276,13 +2275,29 @@ local function SetButtonPressed(button, pressed)
     button._pressedFlag = pressed and true or nil
     local texes = button._gradTex
     local colors = button._gradColors
-    if not texes or not colors then
+    if texes and colors then
+        local factor = pressed and 0.6 or 1
+        for i, tex in ipairs(texes) do
+            local c = colors[i] or colors[#colors]
+            pcall(tex.SetTexture, tex, math.min(c[1] * factor, 1), math.min(c[2] * factor, 1), math.min(c[3] * factor, 1), 1)
+        end
         return
     end
-    local factor = pressed and 0.6 or 1
-    for i, tex in ipairs(texes) do
-        local c = colors[i] or colors[#colors]
-        pcall(tex.SetTexture, tex, math.min(c[1] * factor, 1), math.min(c[2] * factor, 1), math.min(c[3] * factor, 1), 1)
+    -- template button: push the native pressed state and keep it while the
+    -- choice stays selected (hover must not pop it back up)
+    local function HoldState()
+        if button._pressedFlag then
+            pcall(button.SetButtonState, button, "PUSHED")
+        end
+    end
+    if pressed then
+        pcall(button.SetButtonState, button, "PUSHED")
+        pcall(button.SetScript, button, "OnEnter", HoldState)
+        pcall(button.SetScript, button, "OnLeave", HoldState)
+    else
+        pcall(button.SetButtonState, button, "NORMAL")
+        pcall(button.SetScript, button, "OnEnter", nil)
+        pcall(button.SetScript, button, "OnLeave", nil)
     end
 end
 
