@@ -14,7 +14,7 @@ Adds an **Echo** button inside quest log, playback queue status bar, settings pa
 Chat command: `/qe`
 > ⚠️ This addon **requires language‑specific audio data pack**. Core addon alone has no sound.
 ## Downloads
-- Main Addon: [QuestEcho‑1.5.2.zip](https://github.com/LeySure/QuestEcho/releases/download/1.5.2/QuestEcho-1.5.2.zip)
+- Main Addon: [QuestEcho‑1.5.4.zip](https://github.com/LeySure/QuestEcho/releases/download/1.5.4/QuestEcho-1.5.4.zip)
 - Audio Data Packs:
   - enUS: [QuestEchoData-enUS.zip](https://github.com/LeySure/QuestEcho/releases/download/1.5.1/QuestEchoData-enUS.zip) — extract to folder **`QuestEchoData`**
   - zhCN: [QuestEchoData-zhCN.zip](https://github.com/LeySure/QuestEcho/releases/download/1.5.2/QuestEchoData-zhCN.zip) — extract to folder **`QuestEchoData-zhCN`**
@@ -49,7 +49,7 @@ QuestEcho 是 Emberveil（1.12.1）语音插件。接取、完成任务以及NPC
 任务日志会显示Echo按钮，附带播放队列状态栏与设置面板。聊天指令 `/qe`。
 > ⚠️ 本体插件**不包含语音**，必须安装对应语言数据包才有声音。
 ### 下载
-- 主插件：[QuestEcho‑1.5.2.zip](https://github.com/LeySure/QuestEcho/releases/download/1.5.2/QuestEcho-1.5.2.zip)
+- 主插件：[QuestEcho‑1.5.4.zip](https://github.com/LeySure/QuestEcho/releases/download/1.5.4/QuestEcho-1.5.4.zip)
 - 英文数据包：[QuestEchoData-enUS.zip](https://github.com/LeySure/QuestEcho/releases/download/1.5.1/QuestEchoData-enUS.zip) — 解压后文件夹名 **`QuestEchoData`**
 - 中文数据包：[QuestEchoData-zhCN.zip](https://github.com/LeySure/QuestEcho/releases/download/1.5.2/QuestEchoData-zhCN.zip) — 解压后文件夹名 **`QuestEchoData-zhCN`**
 ### 安装
