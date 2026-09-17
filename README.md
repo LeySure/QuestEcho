@@ -13,7 +13,7 @@ Adds an **Echo** button inside quest log, playback queue status bar, settings pa
 Chat command: `/qe`
 > ⚠️ This addon **requires language‑specific audio data pack**. Core addon alone has no sound.
 ## Downloads
-- Main Addon: [QuestEcho‑1.5.4.zip](https://github.com/LeySure/QuestEcho/releases/download/1.5.4/QuestEcho-1.5.4.zip)
+- Main Addon: [QuestEcho‑1.5.4.zip](https://github.com/LeySure/QuestEcho/releases/download/1.5.5/QuestEcho-1.5.5.zip)
 - Audio Data Packs:
   - enUS: [QuestEchoData-enUS.zip](https://github.com/LeySure/QuestEcho/releases/download/1.5.1/QuestEchoData-enUS.zip) — extract to folder **`QuestEchoData`**
   - zhCN: [QuestEchoData-zhCN.zip](https://github.com/LeySure/QuestEcho/releases/download/1.5.2/QuestEchoData-zhCN.zip) — extract to folder **`QuestEchoData-zhCN`**
