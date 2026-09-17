@@ -7,9 +7,8 @@ Plays audio voice lines when you accept / complete quests and interact with NPC 
 
 Adds an **Echo** button inside quest log, playback queue status bar, settings panel and replay window.   
 
-![](https://github.com/LeySure/QuestEcho/blob/main/screenshots/quest%20echo%20button.png)
+![](https://github.com/LeySure/QuestEcho/blob/main/screenshots/WOW.jpg)
 
-![](https://github.com/LeySure/QuestEcho/blob/main/screenshots/status%20bar%20and%20settings.png)
 
 Chat command: `/qe`
 > ⚠️ This addon **requires language‑specific audio data pack**. Core addon alone has no sound.
