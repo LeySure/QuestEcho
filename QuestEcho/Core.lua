@@ -853,6 +853,7 @@ local DEFAULTS =
         Delay = 0.3,            -- seconds to wait after the dialog opens
         GossipFrequency = 1,    -- Enums.GossipFrequency.Always
         ShowUI = true,          -- show the small status bar
+        Captions = true,        -- show the quest text under the status bar
         Debug = false,
         -- Seconds to keep the volume muted after a line is removed before
         -- restoring the player's sound settings. Short (0.5) = fast restore,
@@ -1325,6 +1326,10 @@ end
 --- new module table replaces the old one so fresh data wins.
 function DataModules:Register(name, module, addonNameOverride)
     if self.registeredModules[name] then
+        -- Keep the metadata the previous registration resolved: the sound
+        -- path is built from module.METADATA.AddonName (e.g. the standalone
+        -- pack directory), and the fresh module must carry it too.
+        module.METADATA = self.registeredModules[name].METADATA
         for i, m in ipairs(self.registeredModulesOrdered) do
             if m == self.registeredModules[name] then
                 self.registeredModulesOrdered[i] = module
@@ -1959,7 +1964,9 @@ end
 -- =============================================================================
 -- SoundQueueUI: small draggable status bar with a live queue list
 -- =============================================================================
-local FONT = STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF"
+-- Use the client's localized font when available (GameFontNormal resolves to
+-- the CJK font on zhCN/zhTW clients) so Chinese text never renders as "?".
+local FONT = (GameFontNormal and GameFontNormal.GetFont and GameFontNormal:GetFont()) or STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF"
 
 -- Classic WoW panel look: opaque dark fill + thin gold border, drawn from
 -- solid-color textures (icon/backdrop texture files are not guaranteed to
@@ -2452,6 +2459,29 @@ function SoundQueueUI:Create()
     pcall(status.SetShadowColor, status, 0, 0, 0, 1)
     pcall(status.SetShadowOffset, status, 1, -1)
 
+    -- Caption: the quest text of the currently playing voice line, floating
+    -- just above the status bar. Refreshed every frame by UpdateProgress.
+    -- Caption: the quest text of the currently playing voice line, floating
+    -- just above the status bar. Built as a fixed grid of one-line
+    -- FontStrings (multi-line \n text is unreliable on this client).
+    self.captionLines = {}
+    for i = 1, 8 do
+        -- Mirror the status line's exact font setup (GameFontWhite template +
+        -- SetFont(FONT, 12)): that combination renders Chinese correctly on
+        -- this client, while the GameFontNormal template can pick an
+        -- English-only face and show CJK glyphs as "?".
+        local line = frame:CreateFontString(nil, "OVERLAY", "GameFontWhite")
+        line:SetPoint("BOTTOMLEFT", frame, "TOPLEFT", 6, 4 + (i - 1) * 13)
+        line:SetWidth(308)
+        line:SetHeight(16)
+        pcall(line.SetFont, line, FONT, 12)
+        pcall(line.SetTextColor, line, 1, 1, 1)
+        pcall(line.SetJustifyH, line, "LEFT")
+        pcall(line.SetShadowColor, line, 0, 0, 0, 1)
+        pcall(line.SetShadowOffset, line, 1, -1)
+        self.captionLines[i] = line
+    end
+
     local clearButton = MakeStockButton(frame, "X", 20, function()
         SoundQueue:RemoveAllSoundsFromQueue()
     end)
@@ -2597,6 +2627,290 @@ function SoundQueueUI:UpdateProgress()
     if self.progFillTop:GetWidth() ~= w then
         self.progFillTop:SetWidth(w)
         self.progFillBot:SetWidth(w)
+    end
+    self:UpdateCaption()
+end
+
+--- Wrap a caption to the bar's width. Sentences stay whole on one line when
+--- they fit; only over-long sentences are split (word boundaries, at least 5
+--- words per line). CJK text (no spaces) breaks by display width.
+local function WrapCaption(s)
+    s = tostring(s or "")
+    s = s:gsub("%$B%$B", "\n"):gsub("%$b%$b", "\n")
+    local lines = {}
+    local function CharWidth(c)
+        local b = c:byte(1)
+        return (b and b >= 0x80) and 2 or 1
+    end
+    -- Cut at a whole-character boundary: never split a multi-byte UTF-8
+    -- character (a split codepoint renders as "?" in the client).
+    -- Returns (part, rest); rest == "" when everything fits.
+    local function CutAtWidth(s, maxW)
+        local w = 0
+        local i = 1
+        local last = 1
+        while i <= #s do
+            local b = s:byte(i)
+            if not b then
+                break
+            end
+            local clen = 1
+            if b >= 0xF0 then
+                clen = 4
+            elseif b >= 0xE0 then
+                clen = 3
+            elseif b >= 0xC0 then
+                clen = 2
+            end
+            local cw = (b >= 0x80) and 2 or 1
+            if w + cw > maxW then
+                break
+            end
+            w = w + cw
+            i = i + clen
+            last = i
+        end
+        return s:sub(1, last - 1), s:sub(last)
+    end
+    -- A line whose characters are mostly > 0x80 is CJK text: wrap by display
+    -- width, treating spaces as soft sentence breaks, never by word count.
+    local function IsCJK(sent)
+        local cjk = 0
+        local total = 0
+        for i = 1, #sent do
+            local b = sent:byte(i)
+            if b then
+                total = total + 1
+                if b >= 0x80 then
+                    cjk = cjk + 1
+                end
+            end
+        end
+        return total > 0 and cjk / total > 0.5
+    end
+    local function EmitSentence(sent)
+        sent = sent:gsub("^%s+", ""):gsub("%s+$", "")
+        if sent == "" then
+            return
+        end
+        if IsCJK(sent) then
+            -- CJK: keep the whole sentence on one line when it fits (a little
+            -- overflow is acceptable); otherwise break at spaces first, then
+            -- by display width.
+            local sw = 0
+            for i = 1, #sent do
+                sw = sw + CharWidth(sent:sub(i, i))
+            end
+            -- The bar is ~308px wide; zhCN glyphs render at ~12px each, so a
+            -- single line fits ~25 glyphs (~50 units). Keep whole sentences on
+            -- one line only when they fit; anything longer wraps so the client
+            -- never truncates with an ellipsis.
+            if sw <= 50 then
+                lines[#lines + 1] = sent
+                return
+            end
+            -- break at spaces (soft sentence boundaries in zhCN text)
+            local line = ""
+            local width = 0
+            local i = 1
+            while i <= #sent do
+                local j = i
+                while j <= #sent and sent:sub(j, j) ~= " " do
+                    j = j + 1
+                end
+                local chunk = sent:sub(i, j - 1)
+                local wd = 0
+                for k = 1, #chunk do
+                    wd = wd + CharWidth(chunk:sub(k, k))
+                end
+                if wd > 50 then
+                    -- a single unbroken chunk wider than the bar: cut by whole
+                    -- characters, never inside a multi-byte codepoint
+                    local rest = chunk
+                    while rest ~= "" do
+                        local part, tail = CutAtWidth(rest, 48)
+                        if part == "" then
+                            -- single codepoint wider than the budget: keep it
+                            part = rest
+                            tail = ""
+                        end
+                        lines[#lines + 1] = part
+                        rest = tail
+                    end
+                elseif line ~= "" and width + 1 + wd > 50 then
+                    lines[#lines + 1] = line
+                    line = chunk
+                    width = wd
+                elseif line == "" then
+                    line = chunk
+                    width = wd
+                else
+                    line = line .. " " .. chunk
+                    width = width + 1 + wd
+                end
+                i = j + 1
+            end
+            if line ~= "" then
+                lines[#lines + 1] = line
+            end
+            return
+        end
+        -- Word-based wrapping inside the sentence (>= 5 words per line).
+        local line = ""
+        local width = 0
+        local words = 0
+        local i = 1
+        while i <= #sent do
+            local j = i
+            while j <= #sent and sent:sub(j, j) ~= " " do
+                j = j + 1
+            end
+            local word = sent:sub(i, j - 1)
+            local wd = 0
+            for k = 1, #word do
+                wd = wd + CharWidth(word:sub(k, k))
+            end
+            if wd > 64 then
+                -- an unbroken word wider than the bar: cut it by whole
+                -- characters (protects multi-byte text mixed into a word)
+                local rest = word
+                while rest ~= "" do
+                    local part, tail = CutAtWidth(rest, 64)
+                    if part == "" then
+                        part = rest
+                        tail = ""
+                    end
+                    lines[#lines + 1] = part
+                    rest = tail
+                end
+                line = ""
+                width = 0
+                words = 0
+            elseif line ~= "" then
+                if width + 1 + wd > 64 and words >= 5 then
+                    lines[#lines + 1] = line
+                    line = word
+                    width = wd
+                    words = 1
+                else
+                    line = line .. " " .. word
+                    width = width + 1 + wd
+                    words = words + 1
+                end
+            else
+                line = word
+                width = wd
+                words = 1
+            end
+            i = j + 1
+        end
+        if line ~= "" then
+            lines[#lines + 1] = line
+        end
+    end
+    -- Collect sentences (end on . ! ? or a hard line break, including the
+    -- full-width CJK punctuation) and emit them.
+    local sent = ""
+    for i = 1, #s do
+        local c = s:sub(i, i)
+        sent = sent .. c
+        if c == "." or c == "!" or c == "?" or c == "\n" or c == "。" or c == "！" or c == "？" then
+            EmitSentence(sent)
+            sent = ""
+        end
+    end
+    EmitSentence(sent)
+    return table.concat(lines, "\n")
+end
+
+--- Show the quest text / NPC name of the currently playing voice line under
+--- the status bar. Called every frame from UpdateProgress. Renders into a
+--- fixed grid of one-line FontStrings (multi-line \n is unreliable here):
+--- line 1 = gold title, following lines = wrapped quest detail text.
+function SoundQueueUI:UpdateCaption()
+    if not self.captionLines then
+        return
+    end
+    -- /qe diagfont test mode: keep the fixed test text on line 1 visible
+    -- instead of overwriting it every frame.
+    if QuestEcho._diagFontTest then
+        self.captionLines[1]:SetText("测试我兄弟传一言一往，中文渲染是否正常显示")
+        for i = 2, 8 do
+            self.captionLines[i]:SetText("")
+        end
+        return
+    end
+    local lines = {}
+    if Addon.db.profile.Captions then
+        local current = SoundQueue.current
+        -- Only quest voice lines carry subtitle text; gossip lines show nothing.
+        if current and current.questID then
+            local qm = DataModules:GetModule("QuestEchoData")
+            local qt = qm and qm.QuestTextByID and qm.QuestTextByID[current.questID]
+            if qt and (qt.T or qt.D) then
+                local detail = tostring(qt.D or "")
+                -- Show only the line being read right now; no title, finished
+                -- lines disappear so the caption stays one line.
+                local wrapped = {}
+                for part in WrapCaption(detail):gmatch("[^\n]+") do
+                    wrapped[#wrapped + 1] = part
+                end
+                local total = #wrapped
+                if total > 0 then
+                    -- Each line consumes time proportional to its word count
+                    -- (TTS reads longer lines slower). Compensate for the
+                    -- ~0.5s lead-in silence and let the last line linger for
+                    -- the trailing pause so captions do not run ahead.
+                    local totalWords = 0
+                    local lineWords = {}
+                    for idx = 1, total do
+                        local n = 0
+                        for _ in wrapped[idx]:gmatch("%S+") do
+                            n = n + 1
+                        end
+                        -- CJK lines have no spaces, so word count is 1 per line;
+                        -- weight by display width instead so longer lines get
+                        -- proportionally more time and captions stay in sync.
+                        if n <= 1 then
+                            n = 0
+                            for i2 = 1, #wrapped[idx] do
+                                local b = wrapped[idx]:byte(i2)
+                                n = n + ((b and b >= 0x80) and 2 or 1)
+                            end
+                        end
+                        lineWords[idx] = n
+                        totalWords = totalWords + n
+                    end
+                    local cur = 1
+                    if current.startedAt and current.length and current.length > 0.5 then
+                        local elapsed = GetTime() - current.startedAt
+                        -- Lead-in silence varies per file; compensating a full
+                        -- 0.5s makes captions run ahead on files with little
+                        -- silence. Use a smaller lead and stretch the timeline
+                        -- ~6% so captions trail slightly instead of jumping
+                        -- ahead of the voice.
+                        local lead = 0.3
+                        local dur = (current.length - lead) * 1.06
+                        local adj = (elapsed - lead) / dur
+                        adj = math.max(0, math.min(1, adj))
+                        local target = adj * totalWords
+                        local acc = 0
+                        cur = total
+                        for idx = 1, total do
+                            acc = acc + lineWords[idx]
+                            if acc >= target then
+                                cur = idx
+                                break
+                            end
+                        end
+                    end
+                    lines[#lines + 1] = wrapped[cur]
+                end
+            end
+        end
+    end
+    for i = 1, 8 do
+        self.captionLines[i]:SetText(lines[i] or "")
     end
 end
 
@@ -3398,6 +3712,7 @@ local function RefreshOptionsUI()
     OptionsUI.delayLabel:SetText(format(L("Delay before lines: %.1f s", "播放前延迟：%.1f 秒"), profile.Delay))
     OptionsUI.statusLabel:SetText(format(L("Status bar: %s", "状态栏：%s"), profile.ShowUI and L("shown", "显示") or L("hidden", "隐藏")))
     OptionsUI.voiceLabel:SetText(format(L("Voice volume: %.2f x", "语音音量：%.2f 倍"), profile.VoiceVolume or 1))
+    OptionsUI.captionsLabel:SetText(format(L("Captions: %s", "字幕：%s"), profile.Captions and L("on", "开") or L("off", "关")))
     for _, entry in ipairs(GOSSIP_BUTTONS) do
         local active = profile.GossipFrequency == entry.value
         SetButtonPressed(entry.button, active)
@@ -3447,12 +3762,12 @@ function OptionsUI:Create()
 
     local frame = CreateFrame("Frame", "QuestEchoOptionsFrame", UIParent)
     frame:SetWidth(320)
-    frame:SetHeight(188)
+    frame:SetHeight(214)
     self.frame = frame
     self:ApplySavedPos()
     frame:SetClampedToScreen(true)
     frame:EnableMouse(true)
-    ApplyClassicBackdrop(frame, 320, 188)
+    ApplyClassicBackdrop(frame, 320, 214)
     -- Manual Shift-drag, same as the status bar (StartMoving is unreliable
     -- on this client).
     frame:SetScript("OnMouseDown", function()
@@ -3587,10 +3902,21 @@ function OptionsUI:Create()
     end)
     clearButton:SetPoint("LEFT", testButton, "RIGHT", 6, 0)
 
+    local captionsLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    captionsLabel:SetPoint("TOPLEFT", frame, "TOPLEFT", 10, -162)
+    pcall(captionsLabel.SetFont, captionsLabel, FONT, 11)
+
+    local captionsButton = MakeTextButton(frame, L("toggle", "切换"), 70, function()
+        Addon.db.profile.Captions = not Addon.db.profile.Captions
+        RefreshOptionsUI()
+    end)
+    captionsButton:SetPoint("TOPLEFT", frame, "TOPLEFT", 230, -158)
+
     self.frame = frame
     self.delayLabel = delayLabel
     self.statusLabel = statusLabel
     self.voiceLabel = voiceLabel
+    self.captionsLabel = captionsLabel
     RefreshOptionsUI()
 end
 
@@ -4540,6 +4866,82 @@ local function HandleSlashCommand(input)
             end
         end
         Print("|cff33ffcc[QuestEcho]|r -- diagquest done --")
+    elseif command == "diagcaption" then
+        Print("|cff33ffcc[QuestEcho]|r -- diagcaption --")
+        Print(format("  locale: |cffffffff%s|r", tostring(GetLocale())))
+        local fontPath = GameFontNormal and GameFontNormal.GetFont and pcall(GameFontNormal.GetFont, GameFontNormal) and select(1, GameFontNormal:GetFont())
+        Print(format("  GameFontNormal font: %s", tostring(fontPath)))
+        Print(format("  FONT constant: %s", tostring(FONT)))
+        local qm = DataModules:GetModule("QuestEchoData")
+        Print(format("  module QuestEchoData: %s", tostring(qm ~= nil)))
+        if qm then
+            local keys = {}
+            for k in pairs(qm) do
+                keys[#keys + 1] = tostring(k)
+            end
+            table.sort(keys)
+            Print("  module keys: " .. (table.concat(keys, ", ") or ""))
+            Print(format("  _TestMarker: %s", tostring(qm._TestMarker)))
+            Print(format("  _TextPart1/2/3: %s/%s/%s", tostring(qm._TextPart1), tostring(qm._TextPart2), tostring(qm._TextPart3)))
+            Print(format("  _M/_F1..7: %s/%s/%s/%s/%s/%s/%s/%s", tostring(qm._M), tostring(qm._F1), tostring(qm._F2), tostring(qm._F3), tostring(qm._F4), tostring(qm._F5), tostring(qm._F6), tostring(qm._F7)))
+            local glob = _G.QuestEchoData
+            Print(format("  global QuestEchoData is module: %s", tostring(glob == qm)))
+            if glob and glob ~= qm then
+                local gkeys = {}
+                for k in pairs(glob) do
+                    gkeys[#gkeys + 1] = tostring(k)
+                end
+                table.sort(gkeys)
+                Print("  global keys: " .. table.concat(gkeys, ", "))
+            end
+        end
+        local qt = qm and qm.QuestTextByID
+        if not qt then
+            Print("  QuestTextByID: |cffff3333NOT LOADED|r")
+        else
+            local n = 0
+            for _ in pairs(qt) do n = n + 1 end
+            Print(format("  QuestTextByID: |cff33ffcc%d entries|r", n))
+            local current = SoundQueue.current
+            Print(format("  current: %s (questID=%s type=%s)", tostring(current and current.fileName or "none"), tostring(current and current.questID or "nil"), current and current.questID and type(current.questID) or "-"))
+            if current and current.questID then
+                local entry = qt[current.questID]
+                if entry then
+                    Print(format("  entry found: T=%q Dlen=%d", tostring(entry.T), #(tostring(entry.D or ""))))
+                    local dd = tostring(entry.D or "")
+                    Print("  D head: " .. dd:sub(1, 60))
+                else
+                    Print(format("  entry |cffff3333NOT FOUND|r for questID=%s", tostring(current.questID)))
+                end
+            end
+            -- fixed sample: quest 35 detail text (contains 传言/一趟)
+            local e35 = qt[35]
+            if e35 then
+                local d35 = tostring(e35.D or "")
+                Print("  [35].D head: " .. d35:sub(1, 60))
+            end
+        end
+        Print("|cff33ffcc[QuestEcho]|r -- diagcaption done --")
+    elseif command == "diagfont" then
+        Print("|cff33ffcc[QuestEcho]|r -- diagfont --")
+        local function FontStr(v)
+            return (v == nil) and "nil" or tostring(v)
+        end
+        if SoundQueueUI and SoundQueueUI.status then
+            local ok1, f1 = pcall(SoundQueueUI.status.GetFont, SoundQueueUI.status)
+            Print(format("  status font: %s", FontStr(f1)))
+        end
+        if SoundQueueUI and SoundQueueUI.captionLines and SoundQueueUI.captionLines[1] then
+            local ok2, f2 = pcall(SoundQueueUI.captionLines[1].GetFont, SoundQueueUI.captionLines[1])
+            Print(format("  caption font: %s", FontStr(f2)))
+            QuestEcho._diagFontTest = true
+            SoundQueueUI.captionLines[1]:SetText("测试我兄弟传一言一往，中文渲染是否正常显示")
+            Print("  caption line 1 set to fixed test text (stays until /qe diagfont off)")
+        end
+        Print("|cff33ffcc[QuestEcho]|r -- diagfont done --")
+    elseif command == "diagfont" and arg1 == "off" then
+        QuestEcho._diagFontTest = false
+        Print("|cff33ffcc[QuestEcho]|r diagfont test cleared")
     elseif command == "status" or command == "s" then
         local current = SoundQueue.current
         local queued = #SoundQueue.sounds
